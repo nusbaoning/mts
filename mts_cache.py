@@ -1,4 +1,7 @@
 import sys
+import time
+import collections
+import operator 
 class cache_algorithm(object):
     """docstring for cache_algorithm"""
     def isHit(self, key):
@@ -161,7 +164,72 @@ class lru(cache_algorithm):
             node.prev.next = self.head
         self.listSize -= n
 
+class lfu(cache_algorithm):
+    """docstring for lfu"""
+    def __init__(self, size):        
+        self.size = size
+        self.ssd = {}
+        self.victims = collections.deque()
+        self.minreq = 1
+        self.sorttime = 0
+    def isHit(self, key):
+        return key in self.ssd
+    def updateCache(self, key):
+        if key in self.ssd:            
+            if self.ssd[key] == self.minreq:
+                try:
+                    self.victims.remove(key)
+                except Exception as e:
+                    pass
+            self.ssd[key] += 1
+            return
+        if len(self.ssd) < self.size:
+            self.ssd[key] = 1
+        else:
+            vk = self.getvictim()
+            # print(key,vk)
+            # print(self.victims)
+            if self.minreq > 1:
+                # self.updateVictim(vk)
+                return
+            else:
+                self.deleteCache(vk)
+                self.ssd[key] = 1
+        # self.updateVictim(key)
 
+    def getvictim(self):
+        if len(self.victims) > 0:
+            return self.victims.pop()
+        else:
+            self.updateVictim()
+            return self.victims.pop()
+
+    def updateVictim(self):
+        l = list(self.ssd.items())
+        
+        l.sort(key=operator.itemgetter(1))
+        self.sorttime += 1
+        
+        
+        _, self.minreq = l[0]
+        for i in range(0,int(0.2*len(self.ssd))):
+            key, req = l[i]
+            if req > self.minreq:
+                break
+            self.victims.append(key)
+    
+    def deleteCache(self,key):
+        if key not in self.ssd:
+            return
+        del(self.ssd[key])
+
+    def printsample(self):
+        print("print lfu ssd")
+        for key in self.ssd.keys():
+            print(key, self.ssd[key])
+
+
+        
 # class lfu(cache_algorithm):
 #     """docstring for lfu"""
 #     def __init__(self, size):
@@ -268,17 +336,17 @@ class lru(cache_algorithm):
 #             print(x.key, x.data)
 
 
-# ssd = lfu(5)
-# ssd.printsample()
-# for i in range(5):
-#     ssd.updateCache(i)
-#     ssd.printsample()
-# ssd.printsample()
-# for i in range(5):
-#     ssd.updateCache(1)
-# ssd.printsample()
-# ssd.updateCache(6)
-# ssd.printsample()
-
-
+ssd = lfu(5)
+ssd.printsample()
+for i in range(5):
+    for j in range(i+1):
+        ssd.updateCache(i)
+ssd.printsample()
+for i in range(5):
+    ssd.updateCache(i+6)
+    ssd.printsample()
+print(ssd.isHit(1))
+print(ssd.isHit(0))
+ssd.deleteCache(10)
+ssd.printsample()
 
