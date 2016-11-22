@@ -8,11 +8,15 @@ output : a ranklist of traces, the request lists in time windows of each blocks
 '''
 import time
 import traceback
+import sys
 from operator import itemgetter
 
 TIME_WINDOW = 10**5
-RANK = True
-FILEPATH = "/mnt/raid5/zf/"
+# RANK = True
+if sys.platform == "linux":
+    FILEPATH = "/mnt/raid5/zf/"
+else:
+    FILEPATH = "D:/Chai/MTS/data/"
 
 
 period = 0
@@ -22,6 +26,10 @@ def updateReqDict(key):
     global reqdict
     if key in reqdict:
         reqlist = reqdict[key]
+        # if isinstance(reqlist, list) == False:
+        #     print(reqdict)
+        #     print(key)
+        #     print(reqlist)
         lastperiod, req = reqlist[-1]
         if lastperiod == period:
             reqlist[-1] = (lastperiod, req+1)
@@ -29,6 +37,8 @@ def updateReqDict(key):
             reqlist.append((period,1))
     else:
         reqdict[key] = [(period,1)]
+    
+    
 def testReqDict():
     global period
     print("******************")
@@ -47,10 +57,13 @@ def testReqDict():
     for _ in range(1,10):
         updateReqDict((10,2))
     print(reqdict)
-def outputReqDict(filename):
+def outputReqDict(ranklist, filename):
     fout = open(filename, "w")
-    for key in reqdict.keys():
+    for rank in ranklist:
+        # print(rank)
+        key, reqnum = rank
         block, write = key
+        key = (block, write)
         reqlist = reqdict[key]
         present = 0
         print(block, write, sep = ",", end = ",", file=fout)
@@ -137,37 +150,37 @@ def printstate():
 def loadfile(filename, rankfile, reqfile):
     i = 0
     global period
-    try:
-        fin = open(filename, 'r', encoding='utf-8', errors='ignore')
-        for line in fin.readlines():
-            if i % TIME_WINDOW == 0:
-                print(period, " finished")
-                period+=1
-            i+=1
-            if line[-1] == "\n":
-                line = line[0:-1]
-            items = line.split(' ')
-            reqtype = int(items[0])
-            block = int(items[2])
-            if reqtype == 0:
-                key = (block, getWriteTime(block))
-                if RANK:
-                    updateRankDict(key)
-                updateReqDict(key)
-            else:
-                updateWriteTime(block)
-                continue
-    except Exception as e:
-        print (traceback.print_exc())
-        print (traceback.format_exc())
-    else:
-        pass
-    finally:
-        fin.close()
-        if RANK:
-            ranklist = sortRankDict()
-            outputRankList(rankfile, ranklist)
-        outputReqDict(reqfile)
+    # try:
+    fin = open(filename, 'r', encoding='utf-8', errors='ignore')
+    for line in fin.readlines():
+        if i % TIME_WINDOW == 0:
+            print(period, " period finished")
+            period+=1
+        i+=1
+        if line[-1] == "\n":
+            line = line[0:-1]
+        items = line.split(' ')
+        reqtype = int(items[0])
+        block = int(items[2])
+        if reqtype == 0:
+            key = (block, getWriteTime(block))
+            # if RANK:
+            updateRankDict(key)
+            updateReqDict(key)
+        else:
+            updateWriteTime(block)
+            continue
+# except Exception as e:
+#     print (traceback.print_exc())
+#     print (traceback.format_exc())
+# else:
+#     pass
+# finally:
+    fin.close()
+    # if RANK:
+    ranklist = sortRankDict()
+    outputRankList(rankfile, ranklist)
+    outputReqDict(ranklist, reqfile)
 
 def testloadfile():
     loadfile(FILEPATH+tracefile)
@@ -176,10 +189,14 @@ def testloadfile():
 def clear_state():
     global period, reqdict, writedict, rankdict
     period = 0
-    reqdict = writedict = rankdict = {}
+    reqdict = {}
+    writedict = {}
+    rankdict = {}
 
-filelist = ["usr_0.csv.req", "proj_3.csv.req", "src2_1.csv.req"]
+# filelist = ["", "proj_3.csv.req", "src2_1.csv.req"]
+filelist = ["proj_3.csv.req", "src2_1.csv.req"]
 for file in filelist:
     print(file)
+    print(reqdict)
     loadfile(FILEPATH + file, FILEPATH + "ranklist_" + file, FILEPATH + "req_" + file)
     clear_state()
