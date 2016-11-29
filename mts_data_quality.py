@@ -50,7 +50,7 @@ def load_file(filename, start, end):
                 ssd.update_cache(block)
             update_req_dict(block)
         else:
-            continue
+            ssd.delete_cache(block)
     fin.close()
 
 '''

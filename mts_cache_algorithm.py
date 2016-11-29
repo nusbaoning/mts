@@ -14,6 +14,9 @@ class CacheAlgorithm(object):
         self.update += 1
     def delete_cache(self, key):
         pass
+    '''
+    get the top n block ids from ssd
+    '''
     def get_top_n(self, number):
         pass
 
@@ -251,7 +254,7 @@ class LFU(CacheAlgorithm):
     def get_top_n(self, number):
         l = list(self.ssd.items())        
         l.sort(key=operator.itemgetter(1), reverse=True)
-        return l[0:number]
+        return (i for i,_ in l[0:number])
 
     def print_sample(self):
         print("print LFU ssd")
