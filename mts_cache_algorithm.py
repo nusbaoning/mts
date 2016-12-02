@@ -254,7 +254,7 @@ class LFU(CacheAlgorithm):
     def get_top_n(self, number):
         l = list(self.ssd.items())        
         l.sort(key=operator.itemgetter(1), reverse=True)
-        return (i for i,_ in l[0:number])
+        return (list(i for i,_ in l[0:number]))
 
     def print_sample(self):
         print("print LFU ssd")
