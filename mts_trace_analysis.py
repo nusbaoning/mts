@@ -14,7 +14,7 @@ def load_file(filename, alg, periodSize=10**5, throt=500, watch=1, predict=5):
 	fin = open(filename, 'r', encoding='utf-8', errors='ignore')
 	lines = fin.readlines()
 	lineNum = len(lines)
-	
+	print(filename, alg, periodSize, throt, watch, predict, file=trace)
 	
 	for line in lines:
 		i += 1
@@ -41,7 +41,7 @@ def load_file(filename, alg, periodSize=10**5, throt=500, watch=1, predict=5):
 				status = "predict"
 			elif status == "predict" and (period%(watch+predict)) == 1:
 				outputResult(watchDict, predictDict, ssd, period-1)
-				print(i, "************************************")
+				print(i, "************************************", file=trace)
 				status = "watch"
 				watchDict = {}
 				predictDict = {}
@@ -63,9 +63,9 @@ def recordReq(block, blockDict):
 
 def outputResult(watchDict, predictDict, ssd, period):
 	ssdBlocks = list(ssd.get_top_n(len(ssd)))
-	print(ssdBlocks)
-	print("watchdict", watchDict)
-	print("predictdict", predictDict)
+	# print(ssdBlocks)
+	# print("watchdict", watchDict)
+	# print("predictdict", predictDict)
 	req = 0
 	for block in ssdBlocks:
 		if block in predictDict:
@@ -94,6 +94,9 @@ def outputResult(watchDict, predictDict, ssd, period):
 
     
 
-load_file("/mnt/raid5/zf/usr_0.csv.req", mts_cache_algorithm.LFU)
+load_file("/home/trace/spc-financial-150w-4K.req", mts_cache_algorithm.LRU)
+load_file("/home/trace/spc-financial-150w-4K.req", mts_cache_algorithm.LFU)
+load_file("/home/trace/spc-websearch1-500w-4K.req", mts_cache_algorithm.LRU)
+load_file("/home/trace/spc-websearch1-500w-4K.req", mts_cache_algorithm.LFU)
 trace.close()
 # load_file("trace.req", mts_cache_algorithm.LRU, periodSize=5, throt=1)
