@@ -110,6 +110,7 @@ def load_file_time_window(filename, alg, periodSize=10**5, throt=500):
 
 
 	fin.close()
+	print(filename, "finished")
 
 def recordReq(block, blockDict):
 	if block in blockDict:
@@ -118,15 +119,21 @@ def recordReq(block, blockDict):
 		blockDict[block] = 1
 	return blockDict
 
+
+
+
+
 def outputResult(watchDict, predictDict, ssd, period):
 	ssdBlocks = list(ssd.get_top_n(len(ssd)))
-	# print(ssdBlocks)
+	# print(ssdBlocks, file=trace)
 	# print("watchdict", watchDict)
 	# print("predictdict", predictDict)
 	req = 0
+	num = 0
 	for block in ssdBlocks:
 		if block in predictDict:
 			req += predictDict[block]
+			
 
 
 	l = list(predictDict.items())        
@@ -134,20 +141,26 @@ def outputResult(watchDict, predictDict, ssd, period):
 	i = 0
 	j = 0
 	reqIdeal = 0
+
 	while i<len(ssd) and j<len(l):
 		if l[j][0] in watchDict:
+			# print(l[j][0], end=',', file=trace)
 			reqIdeal += l[j][1]
+			if l[j][0] in ssd.ssd:
+				num += 1
 			i+=1
 			j+=1
 		else:
 			j+=1
+	# print(file=trace)
+	numIdeal = i
 	# print(watchDict)
 	# print(predictDict)
-	if reqIdeal != 0:		
+	if reqIdeal != 0 and numIdeal != 0:		
 		ratio = round(100*req/reqIdeal, 2)
-		print(period, ratio, "%", req, reqIdeal, file=trace)
+		print(period, ratio, "%,", round(100*num/numIdeal, 2), "%,", req, reqIdeal, num, numIdeal, file=trace)
 	else:
-		print(period, req, reqIdeal, file=trace)
+		print(period, req, reqIdeal, num, numIdeal, file=trace)
 
     
 
@@ -155,8 +168,8 @@ def outputResult(watchDict, predictDict, ssd, period):
 # load_file("/home/trace/spc-financial-150w-4K.req", mts_cache_algorithm.LFU, periodSize=50000, throt=10)
 # load_file("/home/trace/spc-websearch1-500w-4K.req", mts_cache_algorithm.LRU, periodSize = 100000, throt=100)
 # load_file("/home/trace/spc-websearch1-500w-4K.req", mts_cache_algorithm.LFU, periodSize = 100000, throt=100)
-load_file_time_window("/home/trace/spc-websearch1-500w-4K.req", mts_cache_algorithm.LRU, periodSize = 10000, throt=100)
-load_file_time_window("/home/trace/spc-websearch1-500w-4K.req", mts_cache_algorithm.LFU, periodSize = 10000, throt=100)
+load_file_time_window("/home/trace/spc-websearch1-500w-4K.req", mts_cache_algorithm.LRU, periodSize = 100000, throt=100)
+load_file_time_window("/home/trace/spc-websearch1-500w-4K.req", mts_cache_algorithm.LFU, periodSize = 100000, throt=100)
 # load_file_time_window("/home/trace/spc-websearch1-500w-4K.req", mts_cache_algorithm.LRU, periodSize = 1000000, throt=100)
 # load_file_time_window("/home/trace/spc-websearch1-500w-4K.req", mts_cache_algorithm.LFU, periodSize = 1000000, throt=100)
 # load_file("/home/trace/metanode-hive-select-std.req", mts_cache_algorithm.LRU, periodSize=10000, throt=10)
