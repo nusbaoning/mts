@@ -60,11 +60,11 @@ def handle_csv(fileid, filename):
 
     print("read write", readcount, writecount, readcount/writecount, readsize, writesize, readsize/writesize, sep=',')
     print("ucln", len(totalDict), len(readDict), len(writeDict), 
-        lba[2][1]-lba[2][0], lba[0][1]-lba[0][0], lba[1][1]-lba[1][0], sep=',')
+        lba[2][1]-lba[2][0]+1, lba[0][1]-lba[0][0]+1, lba[1][1]-lba[1][0]+1, sep=',')
     print(fileid, readcount+writecount, readcount, writecount, round(readcount/writecount, 2), 
         readsize+writesize, readsize, writesize, round(readsize/writesize, 2), 
         len(totalDict), len(readDict), len(writeDict), 
-        lba[2][1]-lba[2][0], lba[0][1]-lba[0][0], lba[1][1]-lba[1][0], sep=',', file=logFile)
+        lba[2][1]-lba[2][0]+1, lba[0][1]-lba[0][0]+1, lba[1][1]-lba[1][0]+1, sep=',', file=logFile)
     infile.close()
     outfile.close()
 
