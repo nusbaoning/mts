@@ -3,6 +3,7 @@ import time
 import collections
 import operator 
 
+
 PERIODNUM = 10
 PERIODLEN = 10 ** 4
 
@@ -10,7 +11,7 @@ PERIODLEN = 10 ** 4
 class Period(object):
     """docstring for Period"""
     # O(1)
-    def __init__(self, size, alg, warmup = True, sleepStart = 51, sleepInterval = 30, throt = 1000):
+    def __init__(self, size, throt, alg, warmup = True, sleepStart = 1, sleepInterval = 10):
         self.period = 1
         self.req = 0
         self.nextUpdatePeriod = 1
@@ -26,9 +27,11 @@ class Period(object):
         self.hisDict = HistoryDict()
         if self.warmup:
             self.state = "warm"
-        else:
-            print("no warm up")
+        elif sleepStart > 1:
+            # print("no warm up")
             self.state = "learn"
+        else:
+            self.state = "sleep"
         
         self.periodRecord = True
         self.init_potential_dict()
@@ -43,7 +46,7 @@ class Period(object):
         if self.alg == LRU:
             self.potentialDict = self.alg(int(self.throt * 1.1))
         elif self.alg == MT:
-            self.potentialDict = LFU(self.throt)
+            self.potentialDict = PLFU(PERIODLEN * PERIODNUM)
         else: #PLFU
             self.potentialDict = PLFU(PERIODLEN * PERIODNUM)
 
@@ -55,8 +58,8 @@ class Period(object):
     # warm up : dict set, average O(1)
     # record : dict get & set, average O(1)
     # period update : 
-    # pLRU O(throt)
-    # pLFU n=max(periodlen*periodnum,ssd size) O(n)
+    # PLRU O(throt)
+    # PLFU n=max(periodlen*periodnum,ssd size) O(n)
     # MT n = (2*periodlen*periodnum), (max items in record dict)
     # O(n) + O(sizelogsize)
     def update_cache(self, blockID):
@@ -64,10 +67,19 @@ class Period(object):
         if self.state == "warm":
             self.ssd.update_cache(blockID)
             if self.ssd.update >= self.ssd.size:
-                self.state = "learn"
-                self.period = 1
-                self.nextUpdatePeriod = 1
-                self.periodRecord = True
+                if self.sleepStart > 1:
+                    self.state = "learn"
+                    self.period = 1
+                    self.nextUpdatePeriod = 1
+                    self.periodRecord = True
+                else:
+                    self.state = "sleep"
+                    self.period = 1
+                    self.nextUpdatePeriod = self.sleepInterval
+                    if self.sleepInterval <= PERIODNUM:
+                        self.periodRecord = True
+                    else:
+                        self.periodRecord = False
             return
 
         self.req += 1
@@ -139,6 +151,31 @@ class HistoryDict(object):
     """docstring for HistoryDict"""
     def __init__(self):
         self.d = {}
+
+    def access_data_time(self, blockID, period, reqCount):
+        if blockID in self.d:
+            (pointer, accL, lastAccP, lastAccT) = self.d[blockID]
+            if lastAccP == period:
+                accL[pointer] += 1
+                self.d[blockID] = (pointer, accL, lastAccP, reqCount)
+            else:
+                if period - lastAccP >= PERIODNUM:
+                    accL = [0]*PERIODNUM
+                    accL[0] = 1
+                    self.d[blockID] = (0, accL, period, reqCount)
+                else:
+                    i = 0
+                    for p in range(lastAccP + 1, period):
+                        i += 1
+                        accL[(pointer + p) % PERIODNUM] = 0
+                    pointer = (pointer + i + 1) % PERIODNUM
+                    accL[pointer] = 1
+                    self.d[blockID] = (pointer, accL, period, reqCount)
+        else:
+            accL = [0]*PERIODNUM
+            accL[0] = 1
+            self.d[blockID] = (0, accL, period, reqCount)
+
     def access_data(self, blockID, period):
         if blockID in self.d:
             (pointer, accL, lastAccT) = self.d[blockID]
@@ -183,7 +220,25 @@ class HistoryDict(object):
                 return l                
         else:
             return None
-
+    def get_history_data_time(self, blockID, period):
+        if blockID in self.d:
+            (pointer, accL, lastAccT, lct) = self.d[blockID]
+            if lastAccT == period:
+                l = [0] * PERIODNUM
+                for i in range(0,PERIODNUM):
+                    l[i] = accL[(pointer + i) % PERIODNUM]
+                return (l,lct)
+            elif period - lastAccT >= PERIODNUM:
+                del self.d[blockID]
+                return None
+            else:
+                l = [0] * PERIODNUM
+                for i in range(max(0,period-9), lastAccT+1):
+                    # print("test", i, period - i, ((pointer + (PERIODNUM - lastAccT + i)) % PERIODNUM))
+                    l[period - i] = accL[(pointer + (PERIODNUM - lastAccT + i)) % PERIODNUM]
+                return (l,lct)                
+        else:
+            return None
 class CacheAlgorithm(object):
 
     """docstring for CacheAlgorithm"""
@@ -363,7 +418,7 @@ class LRU(CacheAlgorithm):
     def get_top_n(self, number):
         node = self.head
         l = []
-        for i in range(0, number):
+        for i in range(0, min(number, len(self.ssd))):
             l.append(node.key)
             node = node.next
         return l
@@ -393,7 +448,38 @@ class LRU(CacheAlgorithm):
             # print(node.key)
             node = node.prev
 
+class SieveStore(CacheAlgorithm):
+    """docstring for SieveStore"""
+    def __init__(self, size):
+        super().__init__()
+        self.size = size
+        self.ssd = {}
+        self.lru = LRU(size)
 
+    def is_hit(self, key):
+        hit = self.lru.is_hit(key)
+        if hit:
+            super().is_hit()
+        return hit
+    
+    def update_cache(self, key):
+        hit = self.lru.is_hit(key)
+        if hit:
+            self.lru.update_cache(key)
+            return
+        if key in self.ssd:
+            acc = self.ssd[key]
+            if acc >= 6:
+                super().update_cache()
+                self.lru.update_cache(key)
+                self.ssd[key] = 0
+            else:
+                self.ssd[key] = acc+1
+        else:
+            self.ssd[key] = 1
+
+    def delete_cache(self, key):
+        self.lru.delete_cache(key)
 
 class LFU(CacheAlgorithm):
     """docstring for LFU"""
@@ -404,6 +490,10 @@ class LFU(CacheAlgorithm):
         self.victims = collections.deque()
         self.minreq = 1
         self.sorttime = 0
+
+    def __len__(self):
+        return len(self.ssd)
+
     def is_hit(self, key):        
         if key in self.ssd:
             super().is_hit()
@@ -497,7 +587,7 @@ class PLFU(CacheAlgorithm):
         # get evict items from ssd and do eviction
         if self.size - len(self.ssd) < throt:
             evictNum = min(throt, len(potentialDict.ssd)) - (self.size - len(self.ssd))
-            # print("evictnum", evictNum)
+            # print("evictNum", evictNum)
             # calculate requests of ssd data and record to a dict based on request numbers
             d = {}
             for blockID in self.ssd.keys():
@@ -586,6 +676,10 @@ class MT(CacheAlgorithm):
         self.size = size
         self.ssd = {}
 
+    def __len__(self):
+        return len(self.ssd)
+
+
     def is_hit(self, key):
         if key in self.ssd:
             super().is_hit()
@@ -604,14 +698,22 @@ class MT(CacheAlgorithm):
             return
         del(self.ssd[blockID])
 
+    # period is the present finishing period
+    # For example, if the 10th period is finished and we want to update cache, period=10
     def update_cache_k(self, throt, potentialDict, hisDict, period):
+        # start = time.time()
+
         updateNum = min(throt, len(potentialDict.ssd))
+        # print("test updateNum = ", updateNum, "len(self.ssd) = ", len(self.ssd), "size =", self.size,
+        #     "len(potential)=", len(potentialDict.ssd))
+
         # special case : all potentials can be updated into ssd
         # rarely occur
-        if updateNum + len(self.ssd) <= self.size:
-            for blockID in potentialDict.ssd:
-                self.update_cache(blockID)
-            return
+        # if len(potentialDict.ssd) + len(self.ssd) <= self.size:
+        #     # print("entry here", updateNum + len(self.ssd), self.size)
+        #     for blockID in potentialDict.ssd:
+        #         self.update_cache(blockID)
+        #     return
 
                 
         # get request number for good period
@@ -628,25 +730,32 @@ class MT(CacheAlgorithm):
                 reqD[req].append(blockID)
             else:
                 reqD[req] = [blockID]
-        reqL = reqD.keys()
+        reqL = list(reqD.keys())
         reqL.sort(reverse=True)
         sumL.sort(key=operator.itemgetter(1), reverse=True)
-        goodSum = sumL[updateNum-1]
+        print("test", len(sumL), len(potentialDict.ssd), updateNum)
+        _, goodSum = sumL[updateNum-1]
         num = 0
-        for req in reqL:
-            if num < updateNum:
-                num += len(reqD[req])
-            else:
-                goodReq = max(req,2)
+        updateNum = min(updateNum, len(sumL))
+        # if updateNum <= 1.2 * len(sumL):
+        #     goodReq = 2
+        # else:
+        goodReq = 1
+        totalNum = len(potentialDict.ssd)
+        for req in reversed(reqL):
+            # print(req, len(reqD[req]), num, updateNum)
+            if totalNum - len(reqD[req]) < updateNum:
+                goodReq = max(req, 1)
                 break
-
-        print("test goodreq", goodReq)
-        
+            else:
+                totalNum -= len(reqD[req])   
+        print("test goodReq", goodReq, goodSum)
+        # sys.exit(-1)
 
         # get evict items from ssd and do eviction
         if self.size - len(self.ssd) < throt:
             evictNum = min(throt, len(potentialDict.ssd)) - (self.size - len(self.ssd))
-            
+            # print("test evictNum=", evictNum)
             # calculate requests of ssd data and record to a dict based on request numbers
             l = [[], [], [], []]
             for blockID in self.ssd.keys():
@@ -662,41 +771,51 @@ class MT(CacheAlgorithm):
                 if evictNum <= 0:
                     break
                 if len(item) <= evictNum:
-                    for blockID in item:
-                        self.ssd.delete_cache(blockID)
+                    for blockID,_ in item:
+                        self.delete_cache(blockID)
                         evictNum -= 1
                 else:
                     item.sort(key=operator.itemgetter(1))
                     for i in range(0,evictNum):
-                        self.ssd.delete_cache(item[i])
+                        blockID, _ = item[i]
+                        self.delete_cache(blockID)
                     break
 
+            print("test ssd evict, size=", len(self.ssd), "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
             
         # print("potential dict", potentialDict.ssd.keys())
         # calculate good conditions for potential data
         l = [[], [], [], []]
         for blockID,_ in sumL:
-            l = hisDict.get_history_data(blockID, period)
+            rl = hisDict.get_history_data(blockID, period)
             # no way to get l==None
-            gc = get_good_condition(l, goodReq, goodSum)
+            gc = get_good_condition(rl, goodReq, goodSum)
             l[gc].append(blockID)
         i = 3
+        print("test potentialDict", len(potentialDict.ssd))
         while i >= 0:
+            # print(i, updateNum, len(l[i]))
             if updateNum <= 0:
                 break
             if len(l[i]) <= updateNum:
-                for blockID in item:
-                    self.ssd.update_cache(blockID)
+                for blockID in l[i]:
+                    self.update_cache(blockID)
                     updateNum -= 1
+                i -= 1
             else:
-                for j in range(0,evictNum):
-                    self.ssd.update_cache(item[j])
+                for j in range(0,updateNum):
+                    self.update_cache(l[i][j])
                 break
+        print("test ssd update, size=", len(self.ssd), "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
+
+        # end = time.time()
+        # print("test update k speed, consumed", end-start)
 
     def print_sample(self):
         print("print MT ssd")
-        if len(self.ssd) <= 100:
-            print(self.ssd.keys())  
+        print(len(self.ssd))
+        # if len(self.ssd) <= 100:
+        #     print(self.ssd.keys())  
         print("hit", self.hit)
         print("write", self.update)
 
@@ -707,7 +826,148 @@ class MT(CacheAlgorithm):
         # print(len(list(self.ssd.keys())[0:num]))
         result = list(self.ssd.keys())
         return result
+
+class MTtime(CacheAlgorithm):
+    """docstring for MT"""
+    def __init__(self, size):
+        super().__init__()
+        self.size = size
+        self.ssd = {}
+        self.goodReq = 1
+        self.goodSum = 1
+
+    def __len__(self):
+        return len(self.ssd)
+
+
+    def is_hit(self, key):
+        if key in self.ssd:
+            super().is_hit()
+            return True
+        return False   
+
+    # attention : only called in warm state
+    # no check of size
+    def update_cache(self, blockID):
+        if blockID not in self.ssd:            
+            self.ssd[blockID] = 1
+            super().update_cache()
+
+    def delete_cache(self, blockID):
+        if blockID not in self.ssd:
+            return
+        del(self.ssd[blockID])
+
+    # period is the present finishing period
+    # For example, if the 10th period is finished and we want to update cache, period=10
+    def update_cache_k(self, throt, potentialDict, hisDict, period):
+        # start = time.time()
+
+        updateNum = min(throt, len(potentialDict.ssd))
+
+        # get evict items from ssd and do eviction
+        evictNum = updateNum - (self.size - len(self.ssd))
+        print("test, throt=%d, updateNum=%d, evictNum=%d, size=%d, actual ssd size=%d" % (throt, updateNum, evictNum, self.size, len(self.ssd)))
+        print("goodReq=", self.goodReq, ", goodSum=", self.goodSum)
+        if evictNum > 0:
+            # calculate requests of ssd data and record to a dict based on request numbers
+            l = [[], [], [], []]
+            for blockID in self.ssd.keys():
+                r = hisDict.get_history_data_time(blockID, period)
+                if r == None:
+                    l[0].append((blockID,0,0))
+                else:
+                    rl,lct = r
+                    s = sum(rl)
+                    gc = get_good_condition(rl, self.goodReq, self.goodSum)
+                    l[gc].append((blockID,s,lct))
+            # print("test gc", l)
+            for item in l:
+                # print("test evict", len(item), evictNum, len(self.ssd))
+                if evictNum <= 0:
+                    break
+                if len(item) <= evictNum:
+                    for blockID,_,_ in item:
+                        self.delete_cache(blockID)
+                    evictNum -= len(item)
+                else:
+                    # item.sort(key=operator.itemgetter(1,2), reverse=True)
+                    # the list is sorted first as LFU, then as LRU
+                    # let the data with the least req and oldest accessed time first
+                    # evict from the head to the tail
+                    item.sort(key=lambda l:(l[1],l[2]))
+                    # print("test sort", item)
+                    for i in range(0,evictNum):
+                        blockID, _, _ = item[i]
+                        # print(blockID)
+                        self.delete_cache(blockID)
+                    break
+
+            print("test ssd evict, size=", len(self.ssd), "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
+
+
+        sumD = {}    
+        reqD = {}
+        l = [[], [], [], []]
+        totalNum = 0
+        for blockID in potentialDict.ssd.keys():
+            r = hisDict.get_history_data_time(blockID, period)
+            if r==None:
+                print("potential bug none")
+                continue
+            totalNum += 1
+            rl, lct = r
+            gc = get_good_condition(rl, self.goodReq, self.goodSum)
+            dataReq = rl[0]
+            dataSum = sum(rl)
+            
+            update_req_sum(dataReq, reqD)
+            update_req_sum(dataSum, sumD)
+
+            l[gc].append((blockID, dataSum, lct))
+        self.goodSum = get_good_sum_req(sumD, updateNum, totalNum)
+        self.goodReq = get_good_sum_req(reqD, updateNum, totalNum)
         
+        l.reverse()
+        # print(l)
+        for item in l:
+            # print("test update", len(item), updateNum, len(self.ssd))
+            if updateNum<=0:
+                break
+            if len(item) < updateNum:
+                for blockID,_,_ in item:
+                    self.update_cache(blockID)
+                updateNum -= len(item)
+            else:
+                item.sort(key=lambda l:(l[1],l[2]), reverse=True)                    
+                for i in range(0,updateNum):
+                    blockID, _, _ = item[i]                    
+                    self.update_cache(blockID)
+                break
+        print("test ssd update, size=", len(self.ssd), "分布情况=", len(l[3]), len(l[2]), len(l[1]), len(l[0]))
+
+def update_req_sum(num, d):
+    if num not in d:
+        d[num] = 1
+    else:
+        d[num] += 1
+
+def get_good_sum_req(d, num, totalNum):
+
+    if totalNum <= num:
+        return 1
+    # print(d.keys())
+    # print(type(d.keys()))
+    # print(list(d.keys()))
+    l = list(d.keys())
+    l.sort()
+    # print(l)
+    for item in l:
+        if totalNum - d[item] >= num:
+            totalNum -= d[item]
+            continue
+        return item
+    
 # reqList[0] is the request of the latest period, [-1] is the earliest period
 def get_good_condition(reqList, goodReq, goodSum):
     gc = 0
@@ -766,9 +1026,25 @@ def test_get_history_data():
         for j in range(0,i):
             mydict.access_data(1, i)
     print(mydict.d[1])
+    print(mydict.d)
     print(mydict.get_history_data(1, 15))
+    print(mydict.d)
     print(mydict.get_history_data(2,15))
+    print(mydict.d)
     print(mydict.get_history_data(1,20))
+    print("last", mydict.d)
+
+def test_get_history_data_time():
+    mydict = HistoryDict()
+    k = 0
+    for i in range(1,10):
+        for j in range(0,i):
+            k += 1
+            mydict.access_data_time(1, i, k)
+    print(mydict.d[1])
+    print(mydict.get_history_data_time(1, 15))
+    print(mydict.get_history_data_time(2,15))
+    print(mydict.get_history_data_time(1,20))
     print(mydict.d)
 
 def test_plfu():
@@ -784,11 +1060,58 @@ def test_plfu():
             ssd.ssd.print_sample()
             print("state", ssd.state)
 
-l = [0]*10
-print(get_good_condition(l, 5))
-l[0] = 5
-print(get_good_condition(l, 5))
-l[1] = 5
-print(get_good_condition(l, 5))
-l[2] = 5
-print(get_good_condition(l, 5))
+def test_sievestore():
+    ssd = SieveStore(2)
+    for i in range(0,10):
+        ssd.update_cache(1)
+        ssd.update_cache(2)
+        print(ssd.is_hit(1))
+        print(ssd.is_hit(2))
+        print(ssd.hit)
+        print(ssd.update)
+    ssd.delete_cache(1)
+    print(ssd.is_hit(1))
+# test_sievestore()
+
+def test_mttime_evict():
+    ssd = MTtime(5)
+    for i in range(1,6):
+        ssd.update_cache(i)
+    hisDict = HistoryDict()
+    potentialDict = PLFU(5)
+    l = 0
+    for i in range(1,11):
+        for j in range(3,6):
+            for k in range(1,3):
+                l += 1                
+                hisDict.access_data_time(j,i,l)
+    for i in range(1,11):
+        for j in range(6,10):
+            potentialDict.update_cache(j)
+            for k in range(1,3):
+                l += 1                
+                hisDict.access_data_time(j,i,l)
+    potentialDict.update_cache(9)
+    potentialDict.update_cache(10)
+    hisDict.access_data_time(9,10,l+1)
+    hisDict.access_data_time(9,10,l+2)
+    hisDict.access_data_time(10,10,l+3)
+    hisDict.access_data_time(3,10,l+4)
+    
+
+    print(potentialDict.ssd)
+    print(hisDict.d)
+    ssd.update_cache_k(3, potentialDict, hisDict, 10)
+    print(ssd.ssd)
+
+def test_get_good_req():
+    d = {}
+    for i in range(1,11):
+        for j in range(0,i):
+            update_req_sum(i, d)
+    print(d)
+    # print(get_good_sum_req(d, 5, 3))
+    print(get_good_sum_req(d, 15, 55))
+    print(get_good_sum_req(d, 27, 55))
+
+
