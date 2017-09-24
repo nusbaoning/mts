@@ -702,8 +702,10 @@ class MT(CacheAlgorithm):
     # For example, if the 10th period is finished and we want to update cache, period=10
     def update_cache_k(self, throt, potentialDict, hisDict, period):
         # start = time.time()
-
+        # some special case, ssd is very small, possible that all data is hit in one period
         updateNum = min(throt, len(potentialDict.ssd))
+        if updateNum <= 0:
+            return
         # print("test updateNum = ", updateNum, "len(self.ssd) = ", len(self.ssd), "size =", self.size,
         #     "len(potential)=", len(potentialDict.ssd))
 

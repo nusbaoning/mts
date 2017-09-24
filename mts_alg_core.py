@@ -17,25 +17,48 @@ uclnDict = {"netfs":47949, "mix":195423,
 "stg_0":	1608935,
 "ts_0":	131140,
 "wdev_0":	52111,
-"web_0":	1887115
+"web_0":	1887115,
+
+"bs24":	4155,
+"bs39":	12190,
+"dev5.3.7.19":	1873854,
+"dev5.3.11.19":	1081695,
+"live6.31":	30393264,
+"live3.31":	6920465,
+"mfs253":	2222973,
+"mfs101":	1408158,
+"msc116":	216158,
+"msc651":	128895,
+"dad807":	294190,
+"dap812":	224019
 }
 pathDirCam = "/mnt/raid5/trace/MS-Cambridge/"
 pathDictHome = "/home/trace/"
-# pathDict = {"usr_1": pathDirCam+"usr_1.csv.req","src1_0": pathDirCam+"src1_0.csv.req",
-# "ts_0": pathDirCam+"ts_0.csv.req","prn0": pathDirCam+"prn0.csv.req",
-# "netfs": pathDictHome+"netfs.csv.req","mix": pathDictHome+"mix.csv.req",
-# "proj_0": pathDirCam+"proj_0.csv.req","rsrch_0": pathDirCam+"rsrch_0.csv.req",
-# "prxy_0": pathDirCam+"prxy_0.csv.req","stg_0": pathDirCam+"stg_0.csv.req",
-# "src2_0": pathDirCam+"src2_0.csv.req","mds_0": pathDirCam+"mds0.csv.req",
-# "web_0": pathDirCam+"web_0.csv.req","hm_0": pathDirCam+"hm0.csv.req",
-# "wdev_0": pathDirCam+"wdev_0.csv.req"
-# }
+
+pathDict = {
+"bs24":	"/mnt/raid5/trace/MS-production/BuildServer/Traces/24.hour.BuildServer.11-28-2007.07-24-PM.trace.csv.req",
+"bs39":	"/mnt/raid5/trace/MS-production/BuildServer/Traces/24.hour.BuildServer.11-28-2007.07-39-PM.trace.csv.req",
+"dev5.3.7.19":	"/home/bn/python/DevelopmentToolsRelease/Traces/DevDivRelease.03-05-2008.07-19-PM.trace.csv.req",
+"dev5.3.11.19":	"/home/bn/python/DevelopmentToolsRelease/Traces/DevDivRelease.03-05-2008.11-19-PM.trace.csv.req",
+"live6.31":	"/home/bn/python/LiveMapsBackEnd/Traces/LiveMapsBE.02-21-2008.06-31-PM.trace.csv.csv.req",
+"live3.31":	"/home/bn/python/LiveMapsBackEnd/Traces/LiveMapsBE.02-21-2008.03-31-PM.trace.csv.csv.req",
+"mfs253": "/home/bn/python/MSNStorageFileServer/Traces/MSNFS.2008-03-10.02-53.trace.csv.csv.req",
+"mfs101": "/home/bn/python/MSNStorageFileServer/Traces/MSNFS.2008-03-10.01-01.trace.csv.csv.req",
+"msc116": "/home/bn/python/MSNStorageCFS/Traces/CFS.2008-03-10.01-16.trace.csv.csv.req",
+"msc651": "/home/bn/python/MSNStorageCFS/Traces/CFS.2008-03-10.06-51.trace.csv.csv.req",
+"dad807": "/home/bn/python/DisplayAdsDataServer/Traces/DisplayAdsDataServer.2008-03-08.08-07.trace.csv.csv.req",
+"dap812": "/home/bn/python/DisplayAdsPayload/Traces/DisplayAdsPayload.2008-03-08.08-12.trace.csv.csv.req",
+}
+
+
 
 def getPath(traceID, typeID):
 	if typeID == "home":
 		return pathDictHome + traceID + ".csv.req"
 	if typeID == "cam":
 		return pathDirCam + traceID + ".csv.req"
+	if typeID == "production":
+		return pathDict[traceID]
 PERIODNUM = 10
 PERIODLEN = 10 ** 4
 logFilename = "/home/bn/data/result.csv"
@@ -66,12 +89,12 @@ SIZERATE = 0.1
 # 	print("size", math.ceil(0.001*uclnDict[traceID]), math.ceil(0.05*uclnDict[traceID]))
 # 	print("total hit rate", 1.0*(dram.hit+ssd.hit)/readReq, 1.0*ssd.hit/(readReq-dram.hit))
 
-def load_file(traceID, alg):
+def load_file(traceID, typeID, alg):
 	readReq = 0
 	# print(traceID)
 	size = math.ceil(SIZERATE*uclnDict[traceID])
 	ssd = alg(size)
-	fin = open(getPath(traceID, "cam"), 'r', encoding='utf-8', errors='ignore')
+	fin = open(getPath(traceID, typeID), 'r', encoding='utf-8', errors='ignore')
 	lines = fin.readlines()
 	for line in lines:
 		items = line.split(' ')
@@ -91,7 +114,7 @@ def load_file(traceID, alg):
 	logFile.close()
 
 
-def load_file_mt(traceID):
+def load_file_mt(traceID, typeID):
 	readReq = 0
 	size = math.ceil(SIZERATE*uclnDict[traceID])
 	ssd = mts_cache_algorithm.MT(size)
@@ -99,7 +122,7 @@ def load_file_mt(traceID):
 	PERIODLEN = size
 	throt = int(0.1*size)
 	potentialDict = mts_cache_algorithm.PLFU(PERIODLEN * PERIODNUM)
-	fin = open(getPath(traceID, "cam"), 'r', encoding='utf-8', errors='ignore')
+	fin = open(getPath(traceID, typeID), 'r', encoding='utf-8', errors='ignore')
 	lines = fin.readlines()
 	periodSign = 0
 	period = 1	
@@ -150,7 +173,7 @@ def load_file_mt(traceID):
 	logFile.close()
 
 
-def load_file_mt_time(traceID):
+def load_file_mt_time(traceID, typeID):
 	readReq = 0
 	size = math.ceil(SIZERATE*uclnDict[traceID])
 	ssd = mts_cache_algorithm.MTtime(size)
@@ -158,7 +181,7 @@ def load_file_mt_time(traceID):
 	PERIODLEN = size
 	throt = int(0.1*size)
 	potentialDict = mts_cache_algorithm.PLFU(PERIODLEN * PERIODNUM)
-	fin = open(getPath(traceID, "cam"), 'r', encoding='utf-8', errors='ignore')
+	fin = open(getPath(traceID, typeID), 'r', encoding='utf-8', errors='ignore')
 	lines = fin.readlines()
 	periodSign = 0
 	period = 1	
@@ -184,7 +207,6 @@ def load_file_mt_time(traceID):
 				if not hit:
 					potentialDict.update_cache(block)		
 			if periodSign >= PERIODLEN:
-
 				if period <= sleepStart:
 					# print("bug 127", period, periodSign, warmup, test)
 					ssd.update_cache_k(throt, potentialDict, hisDict, period)
@@ -271,21 +293,21 @@ def load_file_mt_time(traceID):
 
 # generateDict()
 # start = time.clock()
-# load_file(sys.argv[1], mts_cache_algorithm.LRU)
+# load_file(sys.argv[1], sys.argv[2], mts_cache_algorithm.LRU)
 # end = time.clock()
 # print("consumed ", end-start, "s")
 
 # start = time.clock()
-# load_file(sys.argv[1], mts_cache_algorithm.SieveStore)
-# end = time.clock()
-# print("consumed ", end-start, "s")
-
-# start = time.clock()
-# load_file_mt(sys.argv[1])
+# load_file(sys.argv[1], sys.argv[2], mts_cache_algorithm.SieveStore)
 # end = time.clock()
 # print("consumed ", end-start, "s")
 
 start = time.clock()
-load_file_mt_time(sys.argv[1])
+load_file_mt(sys.argv[1], sys.argv[2])
 end = time.clock()
 print("consumed ", end-start, "s")
+
+# start = time.clock()
+# load_file_mt_time(sys.argv[1])
+# end = time.clock()
+# print("consumed ", end-start, "s")
