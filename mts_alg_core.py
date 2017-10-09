@@ -4,6 +4,13 @@ import time
 import sys
 import math
 
+# add trace workflow:
+# add ucln
+# add path
+
+# run overflow:
+# 
+
 uclnDict = {"netfs":47949, "mix":195423,
 "mds_0":	769376,
 "hm_0":	488986,
@@ -30,7 +37,16 @@ uclnDict = {"netfs":47949, "mix":195423,
 "msc116":	216158,
 "msc651":	128895,
 "dad807":	294190,
-"dap812":	224019
+"dap812":	224019,
+
+"prn_1" :	19343730 ,
+"proj_2" : 	107472935,
+"proj_3" : 	1383543,
+"prxy_1" : 	196870,
+"src1_1" : 	30780233,
+"src2_1" : 	5019544,
+"usr_0" : 	554527,
+"web_2" :	17610218
 }
 pathDirCam = "/mnt/raid5/trace/MS-Cambridge/"
 pathDictHome = "/home/trace/"
@@ -60,7 +76,7 @@ def getPath(traceID, typeID):
 	if typeID == "production":
 		return pathDict[traceID]
 PERIODNUM = 10
-PERIODLEN = 10 ** 4
+PERIODLEN = 10 ** 5
 logFilename = "/home/bn/data/result.csv"
 SIZERATE = 0.1
 
@@ -119,7 +135,7 @@ def load_file_mt(traceID, typeID):
 	size = math.ceil(SIZERATE*uclnDict[traceID])
 	ssd = mts_cache_algorithm.MT(size)
 	hisDict = mts_cache_algorithm.HistoryDict()
-	PERIODLEN = size
+	# PERIODLEN = size
 	throt = int(0.1*size)
 	potentialDict = mts_cache_algorithm.PLFU(PERIODLEN * PERIODNUM)
 	fin = open(getPath(traceID, typeID), 'r', encoding='utf-8', errors='ignore')
@@ -169,7 +185,56 @@ def load_file_mt(traceID, typeID):
 	print("total hit rate", 1.0*ssd.hit/readReq)
 	print("write", ssd.update)
 	logFile = open(logFilename, "a")
-	print(traceID, "MT", size, 1.0*ssd.hit/readReq, ssd.update, sep=',', file=logFile)
+	print(traceID, "MT", size, 1.0*ssd.hit/readReq, ssd.update, PERIODLEN, sep=',', file=logFile)
+	logFile.close()
+
+def load_file_sieve_original(traceID, typeID):
+	readReq = 0
+	size = math.ceil(SIZERATE*uclnDict[traceID])
+	ssd = mts_cache_algorithm.SieveStoreOriginal(size, 5)
+	PERIODLEN = size
+	throt = int(0.1*size)
+	fin = open(getPath(traceID, typeID), 'r', encoding='utf-8', errors='ignore')
+	lines = fin.readlines()
+	periodSign = 0
+	period = 1	
+	# sleepStart = 50
+	# sleepInterval = 30
+	
+	for line in lines:		
+		items = line.split(' ')
+		reqtype = int(items[0])
+		block = int(items[2])
+		if reqtype == 1:			
+			ssd.delete_cache(block)
+		else:
+			readReq += 1			
+			hit = ssd.is_hit(block)		
+			periodSign += 1				
+			ssd.update_cache(block, period)		
+
+			if periodSign >= PERIODLEN:
+				# if period <= sleepStart:
+				# 	# print("bug 127", period, periodSign, warmup, test)
+				# 	ssd.update_cache_k(throt, potentialDict, hisDict, period)
+				# 	hisDict = mts_cache_algorithm.HistoryDict()
+				# 	potentialDict = mts_cache_algorithm.PLFU(PERIODLEN * PERIODNUM)
+				# elif (period-sleepStart) % sleepInterval == 0:
+				# 	ssd.update_cache_k(throt, potentialDict, hisDict, period)
+				# 	hisDict = mts_cache_algorithm.HistoryDict()
+				# 	potentialDict = mts_cache_algorithm.PLFU(PERIODLEN * PERIODNUM)
+				periodSign = 0	
+				period += 1
+				# sleepSign = (period-sleepStart) % sleepInterval
+				# if period > sleepStart and sleepSign >=  1 and sleepSign <= sleepInterval-10:
+				# 	periodRecord = False
+					
+	fin.close()
+	print("size", size)
+	print("total hit rate", 1.0*ssd.hit/readReq)
+	print("write", ssd.update)
+	logFile = open(logFilename, "a")
+	print(traceID, "SieveOri", size, 1.0*ssd.hit/readReq, ssd.update, sep=',', file=logFile)
 	logFile.close()
 
 
@@ -229,6 +294,7 @@ def load_file_mt_time(traceID, typeID):
 	logFile = open(logFilename, "a")
 	print(traceID, "MT", size, 1.0*ssd.hit/readReq, ssd.update, sep=',', file=logFile)
 	logFile.close()
+
 # def load_file_mt_dram(traceID):
 # 	readReq = 0
 # 	dram = mts_cache_algorithm.LRU(math.ceil(0.001*uclnDict[traceID]))
@@ -306,6 +372,11 @@ start = time.clock()
 load_file_mt(sys.argv[1], sys.argv[2])
 end = time.clock()
 print("consumed ", end-start, "s")
+
+# start = time.clock()
+# load_file_sieve_original(sys.argv[1], sys.argv[2])
+# end = time.clock()
+# print("consumed ", end-start, "s")
 
 # start = time.clock()
 # load_file_mt_time(sys.argv[1])

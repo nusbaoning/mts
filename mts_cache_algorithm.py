@@ -947,7 +947,88 @@ class MTtime(CacheAlgorithm):
                     self.update_cache(blockID)
                 break
         print("test ssd update, size=", len(self.ssd), "分布情况=", len(l[3]), len(l[2]), len(l[1]), len(l[0]))
+    
 
+class SieveStoreOriginal(CacheAlgorithm):
+    """docstring for MT"""
+    def __init__(self, size, right, t1=9, t2=4):
+        super().__init__()
+        self.size = size
+        self.impt = {}
+        self.mpt = {}
+        self.right = right        
+        self.lru = LRU(size)
+        self.t1 = t1
+        self.t2 = t2
+
+    def __len__(self):
+        return len(self.ssd)
+
+    def is_hit(self, key):
+        hit = self.lru.is_hit(key)
+        if hit:
+            super().is_hit()
+        return hit
+             
+    def update_cache(self, blockID, period):
+        hit = self.lru.is_hit(blockID)
+        if hit:
+            self.lru.update_cache(blockID)
+            return
+        key = blockID >> self.right
+        acc = seive_acc_pt(key, period, self.impt)
+        if acc >= self.t1:
+            acc = seive_acc_pt(blockID, period, self.mpt)
+            if acc >= self.t2:
+                super().update_cache()
+                self.lru.update_cache(blockID)
+                del self.impt[key]
+                del self.mpt[blockID]
+            else:
+                return 
+        else:
+            return
+    def delete_cache(self, key):
+        self.lru.delete_cache(key)
+
+def seive_acc_pt(key, period, pt):
+
+    if key in pt:
+        (pointer, accL, lastPeriod) = pt[key]
+        if lastPeriod == period:
+            accL[pointer] += 1
+            return sum(accL)
+        if period - lastPeriod >= PERIODNUM:
+            accL = [0]*PERIODNUM
+            accL[0] = 1
+            pt[key] = (0, accL, period)
+            return 1
+        i = 0
+        for p in range(lastPeriod + 1, period):
+            i += 1
+            accL[(pointer + p) % PERIODNUM] = 0
+        pointer = (pointer + i + 1) % PERIODNUM
+        accL[pointer] = 1
+        pt[key] = (pointer, accL, period)
+        return sum(accL)
+
+    # every case of key in impt return
+    # key not in impt
+    accL = [0]*PERIODNUM
+    accL[0] = 1
+    pt[key] = (0, accL, period)
+    return 1
+
+
+
+    # every case of key in impt return
+    # key not in impt
+    accL = [0]*PERIODNUM
+    accL[0] = 1
+    impt[key] = (0, accL, period)
+    return 1
+
+    
 def update_req_sum(num, d):
     if num not in d:
         d[num] = 1
@@ -1115,5 +1196,6 @@ def test_get_good_req():
     # print(get_good_sum_req(d, 5, 3))
     print(get_good_sum_req(d, 15, 55))
     print(get_good_sum_req(d, 27, 55))
+
 
 
