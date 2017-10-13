@@ -481,82 +481,279 @@ class SieveStore(CacheAlgorithm):
     def delete_cache(self, key):
         self.lru.delete_cache(key)
 
+# class LFU(CacheAlgorithm):
+#     """docstring for LFU"""
+#     def __init__(self, size): 
+#         super().__init__()
+#         self.size = size
+#         self.ssd = {}
+#         self.victims = collections.deque()
+#         self.minreq = 1
+#         self.sorttime = 0
+
+#     def __len__(self):
+#         return len(self.ssd)
+
+#     def is_hit(self, key):        
+#         if key in self.ssd:
+#             super().is_hit()
+#             return True
+#         return False
+
+#     def update_cache(self, key):
+#         if key in self.ssd:            
+#             if self.ssd[key] == self.minreq:
+#                 try:
+#                     self.victims.remove(key)
+#                 except Exception as e:
+#                     pass
+#             self.ssd[key] += 1
+#             return
+#         if self.minreq > 1:
+#             # self.update_victim(vk)
+#             return
+#         super().update_cache()    
+#         if len(self.ssd) < self.size:
+#             self.ssd[key] = 1
+#             return
+#         vk = self.get_victim()        
+#         self.delete_cache(vk)
+#         self.ssd[key] = 1
+#         # self.update_victim(key)
+
+#     def get_victim(self):
+#         if len(self.victims) > 0:
+#             return self.victims.pop()
+#         else:
+#             self.update_victim()
+#             return self.victims.pop()
+
+#     def update_victim(self):
+#         l = list(self.ssd.items())        
+#         l.sort(key=operator.itemgetter(1))
+#         self.sorttime += 1        
+#         _, self.minreq = l[0]
+#         for i in range(0,int(0.2*len(self.ssd))):
+#             key, req = l[i]
+#             if req > self.minreq:
+#                 break
+#             self.victims.append(key)
+    
+#     def delete_cache(self, key):
+#         if key not in self.ssd:
+#             return
+#         del(self.ssd[key])
+
+#     def get_top_n(self, number):
+#         l = list(self.ssd.items())        
+#         l.sort(key=operator.itemgetter(1), reverse=True)
+#         return (list(i for i,_ in l[0:number]))
+
+#     def print_sample(self):
+#         print("print LFU ssd")
+#         if len(self.ssd) <= 100:
+#             for key in self.ssd.keys():
+#                 print(key, self.ssd[key])
+#         print("hit", self.hit)
+#         print("write", self.update)
+
+class CacheNode(object):
+    def __init__(self, key, value, freq_node, pre, nxt):
+        self.key = key
+        self.value = value
+        self.freq_node = freq_node
+        self.pre = pre # previous CacheNode
+        self.nxt = nxt # next CacheNode
+
+    def free_myself(self):
+        if self.freq_node.cache_head == self.freq_node.cache_tail:
+            self.freq_node.cache_head = self.freq_node.cache_tail = None
+        elif self.freq_node.cache_head == self:
+            self.nxt.pre = None
+            self.freq_node.cache_head = self.nxt
+        elif self.freq_node.cache_tail == self:
+            self.pre.nxt = None
+            self.freq_node.cache_tail = self.pre
+        else:
+            self.pre.nxt = self.nxt
+            self.nxt.pre = self.pre
+
+        self.pre = None
+        self.nxt = None
+        self.freq_node = None
+
+class FreqNode(object):
+    def __init__(self, freq, pre, nxt):
+        self.freq = freq
+        self.pre = pre # previous FreqNode
+        self.nxt = nxt # next FreqNode
+        self.cache_head = None # CacheNode head under this FreqNode
+        self.cache_tail = None # CacheNode tail under this FreqNode
+
+    def count_caches(self):
+        if self.cache_head is None and self.cache_tail is None:
+            return 0
+        elif self.cache_head == self.cache_tail:
+            return 1
+        else:
+            return '2+'
+
+    def remove(self):
+        if self.pre is not None:
+            self.pre.nxt = self.nxt
+        if self.nxt is not None:
+            self.nxt.pre = self.pre
+
+        pre = self.pre
+        nxt = self.nxt
+        self.pre = self.nxt = self.cache_head = self.cache_tail = None
+
+        return (pre, nxt)
+
+    def pop_head_cache(self):
+        if self.cache_head is None and self.cache_tail is None:
+            return None
+        elif self.cache_head == self.cache_tail:
+            cache_head = self.cache_head
+            self.cache_head = self.cache_tail = None
+            return cache_head
+        else:
+            cache_head = self.cache_head
+            self.cache_head.nxt.pre = None
+            self.cache_head = self.cache_head.nxt
+            return cache_head
+
+    def append_cache_to_tail(self, cache_node):
+        cache_node.freq_node = self
+
+        if self.cache_head is None and self.cache_tail is None:
+            self.cache_head = self.cache_tail = cache_node
+        else:
+            cache_node.pre = self.cache_tail
+            cache_node.nxt = None
+            self.cache_tail.nxt = cache_node
+            self.cache_tail = cache_node
+
+    def insert_after_me(self, freq_node):
+        freq_node.pre = self
+        freq_node.nxt = self.nxt
+
+        if self.nxt is not None:
+            self.nxt.pre = freq_node
+        
+        self.nxt = freq_node
+
+    def insert_before_me(self, freq_node):
+        if self.pre is not None:
+            self.pre.nxt = freq_node
+        
+        freq_node.pre = self.pre
+        freq_node.nxt = self
+        self.pre = freq_node
+        
 class LFU(CacheAlgorithm):
-    """docstring for LFU"""
-    def __init__(self, size): 
+
+    def __init__(self, capacity):
         super().__init__()
-        self.size = size
-        self.ssd = {}
-        self.victims = collections.deque()
-        self.minreq = 1
-        self.sorttime = 0
-
+        self.cache = {} # {key: cache_node}
+        self.capacity = capacity
+        self.freq_link_head = None
+    
     def __len__(self):
-        return len(self.ssd)
+        return len(self.cache)
 
-    def is_hit(self, key):        
-        if key in self.ssd:
+    def update_cache(self, key):
+        self.set(key, True)
+
+    def is_hit(self, key):
+        if key in self.cache:
             super().is_hit()
             return True
         return False
 
-    def update_cache(self, key):
-        if key in self.ssd:            
-            if self.ssd[key] == self.minreq:
-                try:
-                    self.victims.remove(key)
-                except Exception as e:
-                    pass
-            self.ssd[key] += 1
-            return
-        if self.minreq > 1:
-            # self.update_victim(vk)
-            return
-        super().update_cache()    
-        if len(self.ssd) < self.size:
-            self.ssd[key] = 1
-            return
-        vk = self.get_victim()        
-        self.delete_cache(vk)
-        self.ssd[key] = 1
-        # self.update_victim(key)
-
-    def get_victim(self):
-        if len(self.victims) > 0:
-            return self.victims.pop()
-        else:
-            self.update_victim()
-            return self.victims.pop()
-
-    def update_victim(self):
-        l = list(self.ssd.items())        
-        l.sort(key=operator.itemgetter(1))
-        self.sorttime += 1        
-        _, self.minreq = l[0]
-        for i in range(0,int(0.2*len(self.ssd))):
-            key, req = l[i]
-            if req > self.minreq:
-                break
-            self.victims.append(key)
-    
     def delete_cache(self, key):
-        if key not in self.ssd:
+        if key not in self.cache:
             return
-        del(self.ssd[key])
+        # print(key)
+        # print(self.cache)
+        cache_node = self.cache.pop(key)
+        cache_node.free_myself()
 
-    def get_top_n(self, number):
-        l = list(self.ssd.items())        
-        l.sort(key=operator.itemgetter(1), reverse=True)
-        return (list(i for i,_ in l[0:number]))
+    def get(self, key):
+        if key in self.cache:
+            cache_node = self.cache[key]
+            freq_node = cache_node.freq_node
+            value = cache_node.value
 
-    def print_sample(self):
-        print("print LFU ssd")
-        if len(self.ssd) <= 100:
-            for key in self.ssd.keys():
-                print(key, self.ssd[key])
-        print("hit", self.hit)
-        print("write", self.update)
+            self.move_forward(cache_node, freq_node)
 
+            return value
+        else:
+            return -1
+
+    def set(self, key, value):
+        if self.capacity <= 0:
+            return -1
+        
+        if key not in self.cache:
+            if len(self.cache) >= self.capacity:
+                self.dump_cache()
+            super().update_cache()
+            self.create_cache(key, value)
+        else:
+            cache_node = self.cache[key]
+            freq_node = cache_node.freq_node
+            cache_node.value = value
+
+            self.move_forward(cache_node, freq_node)
+
+    def move_forward(self, cache_node, freq_node):
+        if freq_node.nxt is None or freq_node.nxt.freq != freq_node.freq + 1:
+            target_freq_node = FreqNode(freq_node.freq + 1, None, None)
+            target_empty = True
+        else:
+            target_freq_node = freq_node.nxt
+            target_empty = False
+        
+        cache_node.free_myself()
+        target_freq_node.append_cache_to_tail(cache_node)
+
+        if target_empty:
+            freq_node.insert_after_me(target_freq_node)
+
+
+        if freq_node.count_caches() == 0:
+            if self.freq_link_head == freq_node:
+                self.freq_link_head = target_freq_node
+
+            freq_node.remove()
+
+    def dump_cache(self):
+        head_freq_node = self.freq_link_head
+        self.cache.pop(head_freq_node.cache_head.key)
+        head_freq_node.pop_head_cache()
+
+        if head_freq_node.count_caches() == 0:
+            self.freq_link_head = head_freq_node.nxt
+            head_freq_node.remove()
+
+    def create_cache(self, key, value):
+        cache_node = CacheNode(key, value, None, None, None)
+        self.cache[key] = cache_node
+        
+        if self.freq_link_head is None or self.freq_link_head.freq != 0:
+            new_freq_node = FreqNode(0, None, None)
+            new_freq_node.append_cache_to_tail(cache_node)
+
+            if self.freq_link_head is not None:
+                self.freq_link_head.insert_before_me(new_freq_node)
+            
+            self.freq_link_head = new_freq_node
+        else:
+            self.freq_link_head.append_cache_to_tail(cache_node)
+
+    def print_cache(self):
+        print(self.cache)
 
 class PLFU(CacheAlgorithm):
     """docstring for PLFU"""
@@ -704,8 +901,9 @@ class MT(CacheAlgorithm):
         # start = time.time()
         # some special case, ssd is very small, possible that all data is hit in one period
         updateNum = min(throt, len(potentialDict.ssd))
+        sign = False
         if updateNum <= 0:
-            return
+            return False
         # print("test updateNum = ", updateNum, "len(self.ssd) = ", len(self.ssd), "size =", self.size,
         #     "len(potential)=", len(potentialDict.ssd))
 
@@ -784,7 +982,8 @@ class MT(CacheAlgorithm):
                     break
 
             print("test ssd evict, size=", len(self.ssd), "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
-            
+            if len(l[3])>0:
+                sign = True
         # print("potential dict", potentialDict.ssd.keys())
         # calculate good conditions for potential data
         l = [[], [], [], []]
@@ -809,7 +1008,9 @@ class MT(CacheAlgorithm):
                     self.update_cache(l[i][j])
                 break
         print("test ssd update, size=", len(self.ssd), "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
-
+        if len(l[3])>0:
+            sign = True
+        return sign
         # end = time.time()
         # print("test update k speed, consumed", end-start)
 
@@ -866,7 +1067,7 @@ class MTtime(CacheAlgorithm):
         # start = time.time()
 
         updateNum = min(throt, len(potentialDict.ssd))
-
+        
         # get evict items from ssd and do eviction
         evictNum = updateNum - (self.size - len(self.ssd))
         print("test, throt=%d, updateNum=%d, evictNum=%d, size=%d, actual ssd size=%d" % (throt, updateNum, evictNum, self.size, len(self.ssd)))
@@ -1198,4 +1399,18 @@ def test_get_good_req():
     print(get_good_sum_req(d, 27, 55))
 
 
-
+# cache = LFU(3)
+# cache.update_cache(1)
+# cache.update_cache(1)
+# cache.update_cache(2)
+# cache.print_cache()
+# cache.update_cache(3)
+# cache.update_cache(3)
+# cache.update_cache(4)
+# cache.print_cache()
+# cache.delete_cache(1)
+# cache.print_cache()
+# cache.update_cache(2)
+# cache.print_cache()
+# cache.update_cache(1)
+# cache.print_cache()
