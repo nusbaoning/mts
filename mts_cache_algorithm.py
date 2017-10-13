@@ -5,7 +5,7 @@ import operator
 
 
 PERIODNUM = 10
-PERIODLEN = 10 ** 4
+PERIODLEN = 10 ** 5
 
 
 class Period(object):
@@ -421,6 +421,7 @@ class LRU(CacheAlgorithm):
         for i in range(0, min(number, len(self.ssd))):
             l.append(node.key)
             node = node.next
+        # print("debug", len(l), l==None)
         return l
 
     def print_sample(self):
@@ -653,10 +654,10 @@ class FreqNode(object):
         
 class LFU(CacheAlgorithm):
 
-    def __init__(self, capacity):
+    def __init__(self, size):
         super().__init__()
         self.cache = {} # {key: cache_node}
-        self.capacity = capacity
+        self.size = size
         self.freq_link_head = None
     
     def __len__(self):
@@ -664,6 +665,20 @@ class LFU(CacheAlgorithm):
 
     def update_cache(self, key):
         self.set(key, True)
+
+    # def update_cache_k(self, throt, potentialDict):
+
+    #     node = potentialDict.head
+    #     # print("potential dict")
+    #     # print(len(potentialDict.ssd))
+    #     # potentialDict.print_sample()
+    #     throt = min(throt, len(potentialDict.ssd))
+    #     for i in range(1, throt):
+    #         node = node.next
+    #     for i in range(0, throt):
+    #         self.update_cache(node.key)
+    #         # print(node.key)
+    #         node = node.prev
 
     def is_hit(self, key):
         if key in self.cache:
@@ -692,11 +707,11 @@ class LFU(CacheAlgorithm):
             return -1
 
     def set(self, key, value):
-        if self.capacity <= 0:
+        if self.size <= 0:
             return -1
         
         if key not in self.cache:
-            if len(self.cache) >= self.capacity:
+            if len(self.cache) >= self.size:
                 self.dump_cache()
             super().update_cache()
             self.create_cache(key, value)
@@ -903,6 +918,7 @@ class MT(CacheAlgorithm):
         updateNum = min(throt, len(potentialDict.ssd))
         sign = False
         if updateNum <= 0:
+            print("update num is 0", throt, len(potentialDict.ssd))
             return False
         # print("test updateNum = ", updateNum, "len(self.ssd) = ", len(self.ssd), "size =", self.size,
         #     "len(potential)=", len(potentialDict.ssd))
@@ -1007,7 +1023,7 @@ class MT(CacheAlgorithm):
                 for j in range(0,updateNum):
                     self.update_cache(l[i][j])
                 break
-        print("test ssd update, size=", len(self.ssd), "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
+        print("test ssd update, size=", len(self.ssd), self.update, "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
         if len(l[3])>0:
             sign = True
         return sign
@@ -1191,6 +1207,10 @@ class SieveStoreOriginal(CacheAlgorithm):
             return
     def delete_cache(self, key):
         self.lru.delete_cache(key)
+
+    def get_top_n(self, num):
+        # print("debug", len(self.lru.ssd))
+        return self.lru.get_top_n(num)
 
 def seive_acc_pt(key, period, pt):
 
