@@ -210,13 +210,13 @@ def load_file_mt(traceID, typeID, periodLen = 10**5, sizerate=0.1, throtrate=0.1
 	ssd = mts_cache_algorithm.MT(size)
 	hisDict = mts_cache_algorithm.HistoryDict()
 	PERIODLEN = periodLen
-	throt = int(throtrate*size)
+	throt = int(throtrate*min(size, PERIODLEN))
 	potentialDict = mts_cache_algorithm.PLFU(PERIODLEN * PERIODNUM)
 	fin = open(getPath(traceID, typeID), 'r', encoding='utf-8', errors='ignore')
 	lines = fin.readlines()
 	periodSign = 0
 	period = 1	
-	sleepStart = 50
+	sleepStart = 10000000
 	periodRecord = True
 	sign = False
 	# print("test", dram.hit, ssd.hit)
@@ -241,18 +241,22 @@ def load_file_mt(traceID, typeID, periodLen = 10**5, sizerate=0.1, throtrate=0.1
 
 				if period <= sleepStart:
 					# print("bug 127", period, periodSign, warmup, test)
-					sign |= ssd.update_cache_k(throt, potentialDict, hisDict, period)
+					sign1,_ = ssd.update_cache_k(throt, potentialDict, hisDict, period)
+					sign |= sign1
 					hisDict = mts_cache_algorithm.HistoryDict()
 					potentialDict = mts_cache_algorithm.PLFU(PERIODLEN * PERIODNUM)
 				elif (period-sleepStart) % sleepInterval == 0:
-					sign |= ssd.update_cache_k(throt, potentialDict, hisDict, period)
+					sign1,_ = ssd.update_cache_k(throt, potentialDict, hisDict, period)
+					sign |= sign1
 					hisDict = mts_cache_algorithm.HistoryDict()
 					potentialDict = mts_cache_algorithm.PLFU(PERIODLEN * PERIODNUM)
 				periodSign = 0	
 				period += 1
-				sleepSign = (period-sleepStart) % sleepInterval
-				if period > sleepStart and sleepSign >=  1 and sleepSign <= sleepInterval-10:
-					periodRecord = False
+				# sleepSign = (period-sleepStart) % sleepInterval
+				# if period > sleepStart and sleepSign >=  1 and sleepSign <= sleepInterval-10:
+				# 	periodRecord = False
+				# if not periodRecord and sleepSign >= sleepInterval-10:
+				# 	periodRecord = True
 					
 	fin.close()
 	print("size", size)
@@ -267,7 +271,7 @@ def load_file_sieve_original(traceID, typeID, t1=9, t2=4, sizerate=0.1):
 	size = math.ceil(sizerate*uclnDict[traceID])
 	ssd = mts_cache_algorithm.SieveStoreOriginal(size, 5, t1, t2)
 	# PERIODLEN = size
-	throt = int(0.1*size)
+	# throt = int(0.1*size)
 	fin = open(getPath(traceID, typeID), 'r', encoding='utf-8', errors='ignore')
 	lines = fin.readlines()
 	periodSign = 0
@@ -453,15 +457,21 @@ def load_file_sieve_original(traceID, typeID, t1=9, t2=4, sizerate=0.1):
 # print(sys.argv[1], sys.argv[2], "SS", "consumed ", end-start, "s")
 
 # throt
-start = time.clock()
-load_file_mt(sys.argv[1], sys.argv[2], throtrate = float(sys.argv[3]))
-end = time.clock()
-print("consumed ", end-start, "s")
-
 # start = time.clock()
-# load_file_mt(sys.argv[1], sys.argv[2], int(sys.argv[3]))
+# load_file_mt(sys.argv[1], sys.argv[2], throtrate = float(sys.argv[3]))
 # end = time.clock()
 # print("consumed ", end-start, "s")
+
+# start = time.clock()
+# load_file_mt(sys.argv[1], sys.argv[2])
+# end = time.clock()
+# print(sys.argv[1], sys.argv[2], "MT consumed ", end-start, "s")
+
+# periodlen
+start = time.clock()
+load_file_mt(sys.argv[1], sys.argv[2], periodLen = int(sys.argv[3]))
+end = time.clock()
+print(sys.argv[1], sys.argv[2], "MT consumed ", end-start, "s")
 
 # start = time.clock()
 # load_file_sieve_original(sys.argv[1], sys.argv[2])

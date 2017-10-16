@@ -299,7 +299,7 @@ class LRU(CacheAlgorithm):
             # Update the list ordering.
             self.mtf(node)
             self.head = node
-            return
+            return None
 
         # Ok, no value is currently stored under 'key' in the cache. We need
         # to choose a node to place the new item in. There are two cases. If
@@ -333,6 +333,7 @@ class LRU(CacheAlgorithm):
         # being circular. Therefore, the ordering is already correct, we just
         # need to adjust the 'head' variable.
         self.head = node
+        return key
 
 
     def delete_cache(self, key):
@@ -919,7 +920,7 @@ class MT(CacheAlgorithm):
         sign = False
         if updateNum <= 0:
             print("update num is 0", throt, len(potentialDict.ssd))
-            return False
+            return (False, None)
         # print("test updateNum = ", updateNum, "len(self.ssd) = ", len(self.ssd), "size =", self.size,
         #     "len(potential)=", len(potentialDict.ssd))
 
@@ -1010,6 +1011,7 @@ class MT(CacheAlgorithm):
             l[gc].append(blockID)
         i = 3
         print("test potentialDict", len(potentialDict.ssd))
+        updateList = []
         while i >= 0:
             # print(i, updateNum, len(l[i]))
             if updateNum <= 0:
@@ -1018,15 +1020,17 @@ class MT(CacheAlgorithm):
                 for blockID in l[i]:
                     self.update_cache(blockID)
                     updateNum -= 1
+                    updateList.append(blockID)
                 i -= 1
             else:
                 for j in range(0,updateNum):
                     self.update_cache(l[i][j])
+                    updateList.append(l[i][j])
                 break
         print("test ssd update, size=", len(self.ssd), self.update, "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
         if len(l[3])>0:
             sign = True
-        return sign
+        return (sign, updateList)
         # end = time.time()
         # print("test update k speed, consumed", end-start)
 
@@ -1191,7 +1195,7 @@ class SieveStoreOriginal(CacheAlgorithm):
         hit = self.lru.is_hit(blockID)
         if hit:
             self.lru.update_cache(blockID)
-            return
+            return None
         key = blockID >> self.right
         acc = seive_acc_pt(key, period, self.impt)
         if acc >= self.t1:
@@ -1201,10 +1205,11 @@ class SieveStoreOriginal(CacheAlgorithm):
                 self.lru.update_cache(blockID)
                 del self.impt[key]
                 del self.mpt[blockID]
+                return blockID
             else:
-                return 
+                return None
         else:
-            return
+            return None
     def delete_cache(self, key):
         self.lru.delete_cache(key)
 
