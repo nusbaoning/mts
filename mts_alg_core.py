@@ -13,7 +13,6 @@ import math
 
 uclnDict = {"netsfs":47949, "mix":195423,
 # "mds_0":	769376,
-# "hm_0":	488986,
 "prn_0":	985474,
 "proj_0":	462462,
 "prxy_0":	79483,
@@ -82,8 +81,8 @@ uclnDict = {"netsfs":47949, "mix":195423,
 "prxy_10":	33713	
 
 }
-pathDirCam = "/mnt/raid5/trace/MS-Cambridge/"
-pathDictHome = "/home/trace/"
+pathDirCam = "/home/trace/ms-cambridge/"
+pathDictHome = "/home/wcw/data/"
 
 pathDict = {
 "bs24":	"/mnt/raid5/trace/MS-production/BuildServer/Traces/24.hour.BuildServer.11-28-2007.07-24-PM.trace.csv.req",
@@ -116,7 +115,7 @@ def getPath(traceID, typeID):
 
 PERIODNUM = 10
 PERIODLEN = 10 ** 5
-logFilename = "/home/bn/data/result.csv"
+logFilename = "/home/wcw/data/result.csv"
 # SIZERATE = 0.1
 
 # def load_file_dram(traceID):
@@ -199,12 +198,13 @@ def load_file(traceID, typeID, alg, sizerate=0.1):
 	fin.close()
 	print("size", size)
 	print("total hit rate", 1.0*ssd.hit/readReq)
+	print("write", ssd.update)
 	logFile = open(logFilename, "a")
 	print(traceID, alg, size, 1.0*ssd.hit/readReq, ssd.update, sep=',', file=logFile)
 	logFile.close()
 
 
-def load_file_mt(traceID, typeID, periodLen = 10**5, sizerate=0.1, throtrate=0.1, sleepInterval=30):
+def load_file_mt(traceID, typeID, periodLen = 10**5, sizerate=0.16, throtrate=0.1, sleepInterval=30):
 	readReq = 0
 	size = math.ceil(sizerate*uclnDict[traceID])
 	ssd = mts_cache_algorithm.MT(size)
@@ -266,7 +266,7 @@ def load_file_mt(traceID, typeID, periodLen = 10**5, sizerate=0.1, throtrate=0.1
 	print(traceID, "MT", size, 1.0*ssd.hit/readReq, ssd.update, throt, PERIODLEN, sign, sep=',', file=logFile)
 	logFile.close()
 
-def load_file_sieve_original(traceID, typeID, t1=9, t2=4, sizerate=0.1):
+def load_file_sieve_original(traceID, typeID, t1=9, t2=4, sizerate=0.4):
 	readReq = 0
 	size = math.ceil(sizerate*uclnDict[traceID])
 	ssd = mts_cache_algorithm.SieveStoreOriginal(size, 5, t1, t2)
@@ -435,16 +435,12 @@ def load_file_sieve_original(traceID, typeID, t1=9, t2=4, sizerate=0.1):
 # 		print("\"" + i + "\": pathDirCam+\"" + i + ".csv.req\"", end="," )
 
 
-# start = time.clock()
-# load_file_dram(sys.argv[1])
-# end = time.clock()
-# print("consumed ", end-start, "s")
-# ssd size
+
 
 # start = time.clock()
-# load_file(sys.argv[1], sys.argv[2], mts_cache_algorithm.LRU, sizerate=float(sys.argv[3]))
+# load_file(sys.argv[1], sys.argv[2], mts_cache_algorithm.LFU)
 # end = time.clock()
-# print(sys.argv[1], sys.argv[2], "LRU", "consumed ", end-start, "s")
+# print(sys.argv[1], sys.argv[2], "LFU", "consumed ", end-start, "s")
 
 # start = time.clock()
 # load_file_mt(sys.argv[1], sys.argv[2], sizerate=float(sys.argv[3]))
@@ -461,35 +457,55 @@ def load_file_sieve_original(traceID, typeID, t1=9, t2=4, sizerate=0.1):
 # load_file_mt(sys.argv[1], sys.argv[2], throtrate = float(sys.argv[3]))
 # end = time.clock()
 # print("consumed ", end-start, "s")
-
-# start = time.clock()
-# load_file_mt(sys.argv[1], sys.argv[2])
-# end = time.clock()
-# print(sys.argv[1], sys.argv[2], "MT consumed ", end-start, "s")
+'''
+start = time.clock()
+load_file_mt(sys.argv[1], sys.argv[2])
+end = time.clock()
+print(sys.argv[1], sys.argv[2], "MT consumed ", end-start, "s")
 
 # periodlen
 start = time.clock()
 load_file_mt(sys.argv[1], sys.argv[2], periodLen = int(sys.argv[3]))
 end = time.clock()
 print(sys.argv[1], sys.argv[2], "MT consumed ", end-start, "s")
-
+'''
 # start = time.clock()
 # load_file_sieve_original(sys.argv[1], sys.argv[2])
 # end = time.clock()
 # print(sys.argv[1], sys.argv[2], "SS", "consumed ", end-start, "s")
 
+for l in ["hm_0",
+"mds_0",
+"prn_0",
+"proj_0",
+"prxy_0",
+"rsrch_0",
+"src2_0",
+"stg_0",
+"ts_0",
+"usr_20",
+"wdev_0",
+"web_2"]:
+	# start = time.clock()
+	# load_file_period(l, "cam", mts_cache_algorithm.LRU)
+	# end = time.clock()
+	# print(l, "cam", "PLRU", "consumed ", end-start, "s")
+	# start = time.clock()
+	# load_file_period(l, "cam", mts_cache_algorithm.PLFU)
+	# end = time.clock()
+	# print(l, "cam", "PLFU", "consumed ", end-start, "s")
 
 
-# start = time.clock()
-# load_file(sys.argv[1], sys.argv[2], mts_cache_algorithm.LFU)
-# end = time.clock()
-# print(sys.argv[1], sys.argv[2], "LFU", "consumed ", end-start, "s")
-
-# start = time.clock()
-# load_file_period(sys.argv[1], sys.argv[2], mts_cache_algorithm.LRU)
-# end = time.clock()
-# print(sys.argv[1], sys.argv[2], "PLRU", "consumed ", end-start, "s")
-
+	start = time.clock()
+	load_file(l, "cam", mts_cache_algorithm.LFU)
+	end = time.clock()
+	print(l, "cam", "LFU", "consumed ", end-start, "s")
+'''
+start = time.clock()
+load_file_period(sys.argv[1], sys.argv[2], mts_cache_algorithm.LRU)
+end = time.clock()
+print(sys.argv[1], sys.argv[2], "PLRU", "consumed ", end-start, "s")
+'''
 # start = time.clock()
 # load_file_period(sys.argv[1], sys.argv[2], mts_cache_algorithm.PLFU)
 # end = time.clock()

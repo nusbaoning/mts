@@ -1,13 +1,25 @@
+#coding=utf-8
+from __future__ import print_function
 import sys
 import time
 import collections
 import operator 
+import random
 
 
 PERIODNUM = 10
 PERIODLEN = 10 ** 5
 
+'''
+普通缓存算法所需接口
+__init__(self, size) 初始化
+delete_cache(self, block) 删除block
+is_hit(self, block) 判断是否命中，更新命中数据
+update_cache(self, block) 表示对当前cache来说，遇到了一次对Block的访问，
+                          该如何更新、是否需要踢出其他块由具体缓存算法决定。
+'''
 
+# PdLRU alg
 class Period(object):
     """docstring for Period"""
     # O(1)
@@ -37,7 +49,7 @@ class Period(object):
         self.init_potential_dict()
     # O(1)
     def is_hit(self, blockID):
-        self.ssd.is_hit(blockID)
+        return self.ssd.is_hit(blockID)
 
     def get_top_n(self, num):
         return self.ssd.get_top_n(num)
@@ -64,8 +76,9 @@ class Period(object):
     # O(n) + O(sizelogsize)
     def update_cache(self, blockID):
         # warm up state
+        result=None
         if self.state == "warm":
-            self.ssd.update_cache(blockID)
+            result =  self.ssd.update_cache(blockID)
             if self.ssd.update >= self.ssd.size:
                 if self.sleepStart > 1:
                     self.state = "learn"
@@ -80,7 +93,7 @@ class Period(object):
                         self.periodRecord = True
                     else:
                         self.periodRecord = False
-            return
+            return result
 
         self.req += 1
         # check whether record is needed        
@@ -94,12 +107,12 @@ class Period(object):
             if self.period == self.nextUpdatePeriod: 
                 # print("test update", self.period, self.ssd.update, len(self.potentialDict.ssd))  
                 if self.alg == LRU:
-                    self.ssd.update_cache_k(self.throt, self.potentialDict)
+                   result =  self.ssd.update_cache_k(self.throt, self.potentialDict)
                 # elif alg == MT:
                 #     self.hisDict = self.ssd.update_cache_k(self.throt, 
                 #         self.potentialDict, self.hisDict, self.period)
                 else: #PLFU
-                    self.ssd.update_cache_k(self.throt, self.potentialDict, self.hisDict, self.period)
+                    result = self.ssd.update_cache_k(self.throt, self.potentialDict, self.hisDict, self.period)
                 
                 self.init_potential_dict()
 
@@ -135,6 +148,7 @@ class Period(object):
                     self.periodRecord = True        
             self.req = 0 
             self.period += 1
+        return result
 
 
     def delete_cache(self, blockID):
@@ -315,10 +329,11 @@ class LRU(CacheAlgorithm):
         # 'head' node.
         super().update_cache()
         node = self.head.prev
-
+        delkey = None
         # If the node already contains something we need to remove the old
         # key from the dictionary.
         if not node.empty:
+            delkey = node.key
             del self.ssd[node.key]
 
         # Place the new key and value in the node
@@ -333,7 +348,7 @@ class LRU(CacheAlgorithm):
         # being circular. Therefore, the ordering is already correct, we just
         # need to adjust the 'head' variable.
         self.head = node
-        return key
+        return delkey
 
 
     def delete_cache(self, key):
@@ -383,7 +398,6 @@ class LRU(CacheAlgorithm):
             node = node.next
 
     def change_size(self, size):
-        
         if size > self.listSize:
             self.add_tail_node(size - self.listSize)
         elif size < self.listSize:
@@ -406,7 +420,7 @@ class LRU(CacheAlgorithm):
     # Decreases the size of the list by removing n nodes from the tail of the
     # list.
     def remove_tail_node(self, n):
-        assert self.listSize > n
+        assert self.listSize >= n
         for i in range(n):
             node = self.head.prev
             if not node.empty:
@@ -612,6 +626,7 @@ class FreqNode(object):
 
         return (pre, nxt)
 
+    # 去掉第一个结点
     def pop_head_cache(self):
         if self.cache_head is None and self.cache_tail is None:
             return None
@@ -652,7 +667,11 @@ class FreqNode(object):
         freq_node.pre = self.pre
         freq_node.nxt = self
         self.pre = freq_node
-        
+
+# LFU中的结构是
+# FreqNode是访问次数为freq-1(即freq从0开始，但应该没影响)的块按照最近访问从远到近排，
+# 即新来的块加在队尾cache_tail，踢出的块在队头cache_head
+# FreqNode本身连接顺序也是从低到高排，访问次数少的在前头，访问次数多的在后头
 class LFU(CacheAlgorithm):
 
     def __init__(self, size):
@@ -692,20 +711,27 @@ class LFU(CacheAlgorithm):
             return
         # print(key)
         # print(self.cache)
+
         cache_node = self.cache.pop(key)
+        freq_node = cache_node.freq_node
         cache_node.free_myself()
+        if freq_node.count_caches() == 0:
+            if self.freq_link_head == freq_node:
+                self.freq_link_head = target_freq_node
 
-    def get(self, key):
-        if key in self.cache:
-            cache_node = self.cache[key]
-            freq_node = cache_node.freq_node
-            value = cache_node.value
+            freq_node.remove()
 
-            self.move_forward(cache_node, freq_node)
+    # def get(self, key):
+    #     if key in self.cache:
+    #         cache_node = self.cache[key]
+    #         freq_node = cache_node.freq_node
+    #         value = cache_node.value
 
-            return value
-        else:
-            return -1
+    #         self.move_forward(cache_node, freq_node)
+
+    #         return value
+    #     else:
+    #         return -1
 
     def set(self, key, value):
         if self.size <= 0:
@@ -723,6 +749,7 @@ class LFU(CacheAlgorithm):
 
             self.move_forward(cache_node, freq_node)
 
+    # 把freq_node中已有的cache_node放到freq+1的freqnode中
     def move_forward(self, cache_node, freq_node):
         if freq_node.nxt is None or freq_node.nxt.freq != freq_node.freq + 1:
             target_freq_node = FreqNode(freq_node.freq + 1, None, None)
@@ -747,7 +774,7 @@ class LFU(CacheAlgorithm):
     def dump_cache(self):
         head_freq_node = self.freq_link_head
         self.cache.pop(head_freq_node.cache_head.key)
-        head_freq_node.pop_head_cache()
+        assert head_freq_node.pop_head_cache()!=None
 
         if head_freq_node.count_caches() == 0:
             self.freq_link_head = head_freq_node.nxt
@@ -1169,6 +1196,97 @@ class MTtime(CacheAlgorithm):
                 break
         print("test ssd update, size=", len(self.ssd), "分布情况=", len(l[3]), len(l[2]), len(l[1]), len(l[0]))
     
+# 实现版本的bug
+# 在原有的设计方案中，如果ghost LFU命中，p比LRU队列数量小，但是SSD实际不满的情况下
+# 是不会把LRU队列中元素踢出的，要等到SSD满了之后，才会踢出块
+# 但在运行中，SSD很快就会填满，ghost LFU命中会踢出一个SSD中的块，就无所谓了
+
+# 另外一个会有影响的bug是，ghost LFU命中的情况下，
+# 实际应该踢出一个LRU队列的块。但是修改顺序之后会有bug，就算了
+
+class ARC(CacheAlgorithm):
+    def __init__(self, size):
+        super().__init__()
+        self.size = size
+        self.p = int(size/2)
+        self.lru = LRU(self.p)
+        self.glru = LRU(size-self.p)
+
+        self.lfu = LRU(size-self.p)        
+        self.glfu = LRU(self.p)
+
+        self.list = [self.lru, self.glru, self.lfu, self.glfu]
+
+    def delete_cache(self, block):
+        for i in self.list:
+            i.delete_cache(block)
+
+
+    def is_hit(self, block):
+        if self.lru.is_hit(block):
+            super().is_hit()
+            return True
+        if self.lfu.is_hit(block):
+            super().is_hit()
+            return True
+        return False
+
+    def inner_change_size(self, p):
+        if int(self.p) != int(p):
+            self.lru.change_size(int(self.p))
+            self.glru.change_size(int(self.size-self.p))
+            self.lfu.change_size(int(self.size-self.p))
+            self.glfu.change_size(int(self.p))
+
+    def update_cache(self, block):
+        if self.lru.is_hit(block):
+            self.lru.delete_cache(block)
+            delkey = self.lfu.update_cache(block)
+            if delkey!=None:
+                self.glfu.update_cache(delkey)
+
+        elif self.lfu.is_hit(block):
+            self.lfu.update_cache(block)
+
+        elif self.glru.is_hit(block):
+            # 更新p
+            oldp = self.p
+            self.p = min(self.p+max(1, 1.0*len(self.glfu)/len(self.glru)) , self.size)
+            
+            # 将块从glru删掉，在lfu中更新
+            self.glru.delete_cache(block)
+            delkey = self.lfu.update_cache(block)
+            if delkey!=None:
+                self.glfu.update_cache(delkey)
+            super().update_cache()
+
+            # 更新各个队列大小
+            self.inner_change_size(oldp)
+
+        elif self.glfu.is_hit(block):
+            # 更新p
+            oldp = self.p
+            self.p = max(self.p-max(1, 1.0*len(self.glru)/len(self.glfu)) , 0)
+            
+            # 将块从glfu删掉，在lfu中更新
+            self.glfu.delete_cache(block)
+            # 更新各个队列大小
+            delkey = self.lfu.update_cache(block)
+            if delkey!=None:
+                self.glfu.update_cache(delkey)
+            super().update_cache()
+            self.inner_change_size(oldp) 
+
+            
+
+        else:
+            delkey = self.lru.update_cache(block)
+            if delkey!=None:
+                self.glru.update_cache(delkey)
+            super().update_cache()
+
+    
+
 
 class SieveStoreOriginal(CacheAlgorithm):
     """docstring for MT"""
@@ -1423,6 +1541,45 @@ def test_get_good_req():
     print(get_good_sum_req(d, 15, 55))
     print(get_good_sum_req(d, 27, 55))
 
+
+def test_arc():
+    l = []
+    # for i in range(200):
+    #     l.append(random.randint(0,19))
+    # print(l)
+
+    l = [10, 6, 14, 8, 7, 11, 0, 12, 6, 9, 
+    17, 9, 6, 2, 4, 19, 8, 3, 15, 6, 
+    12, 6, 12, 13, 5, 1, 19, 16, 5, 2, 
+    12, 8, 14, 15, 10, 11, 11, 5, 4, 17, 
+    11, 9, 17, 15, 6, 14, 0, 18, 9, 15, 5, 6, 2, 2, 2, 4, 3, 6, 10, 19, 14, 7, 13, 16, 3, 6, 7, 8, 19, 12, 4, 12, 13, 18, 3, 15, 11, 10, 13, 11, 4, 7, 11, 19, 6, 11, 18, 11, 6, 1, 18, 14, 3, 7, 11, 5, 9, 14, 0, 18, 0, 2, 5, 18, 2, 6, 5, 11, 19, 16, 7, 0, 3, 4, 15, 4, 1, 1, 6, 14, 17, 17, 14, 2, 8, 6, 12, 18, 19, 3, 10, 6, 9, 11, 7, 8, 13, 19, 1, 13, 17, 17, 5, 6, 15, 4, 4, 18, 11, 12, 5, 11, 12, 7, 18, 0, 15, 9, 16, 1, 19, 10, 6, 1, 0, 14, 5, 17, 16, 16, 7, 2, 14, 11, 7, 12, 2, 5, 1, 5, 10, 8, 15, 0, 14, 2, 19, 6, 4, 19, 14, 18, 11, 15, 15, 0, 15, 7, 4, 19]
+    ssd = ARC(12)
+    for i in l:
+        print(ssd.hit, ssd.update)
+        for j in ssd.glru.dli():
+            if not j.empty:
+                print(j.key, end=',')
+        print(end=';')
+        for j in ssd.lru.dli():
+            if not j.empty:
+                print(j.key, end=',')
+        print(end=';')
+        for j in ssd.lfu.dli():
+            if not j.empty:
+                print(j.key, end=',')
+        print(end=';')
+        for j in ssd.glfu.dli():
+            if not j.empty:
+                print(j.key, end=',')
+        print()
+        # for j in ssd.lru.dli():
+        #     print(j, end=',')
+        hit = ssd.is_hit(i)
+        print(hit)
+        ssd.update_cache(i)
+ 
+
+test_arc()       
 
 # cache = LFU(3)
 # cache.update_cache(1)

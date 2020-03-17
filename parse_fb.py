@@ -2,66 +2,67 @@ import sys
 import os
 import time
 
+# 将csv文件转化为req文件并且输出metadata
 
 
-def handle_fb_file(filename):    
-    infile = open(filename, 'r', encoding='utf-8', errors='ignore')
-    outname = filename +'.req'
-    outfile = open(outname, 'w')
+# def handle_fb_file(filename):    
+#     infile = open(filename, 'r', encoding='utf-8', errors='ignore')
+#     outname = filename +'.req'
+#     outfile = open(outname, 'w')
     
     
     
-    allLines = fin.readlines()    
-    for line in allLines:
-        # fop.write(line)
-        i += 1
+#     allLines = fin.readlines()    
+#     for line in allLines:
+#         # fop.write(line)
+#         i += 1
         
-        # message = line[LINE_LENGTH:]
-        # line = line[:LINE_LENGTH]       
-        items = line.strip().split()
-        # items from 0 to 6 are : 0 major,minor number; 1 #cpu; 2 #sequence;
-        # 3 timestamp; 4 pid; 5 action; 6 R/W
+#         # message = line[LINE_LENGTH:]
+#         # line = line[:LINE_LENGTH]       
+#         items = line.strip().split()
+#         # items from 0 to 6 are : 0 major,minor number; 1 #cpu; 2 #sequence;
+#         # 3 timestamp; 4 pid; 5 action; 6 R/W
 
-        # the end part of the trace
-        if(len(items)<7):
-            # print("error", line)          
-            # print(items)
-            # print(i)
-            break
+#         # the end part of the trace
+#         if(len(items)<7):
+#             # print("error", line)          
+#             # print(items)
+#             # print(i)
+#             break
 
-        # if i >= 40:
-        #     return
-        action = items[5]
-        rw = items[6]
-        message = line[line.find(items[7], LINE_LENGTH):]
+#         # if i >= 40:
+#         #     return
+#         action = items[5]
+#         rw = items[6]
+#         message = line[line.find(items[7], LINE_LENGTH):]
 
-        # print("items=", items, "action=", action, "rw=", rw)
+#         # print("items=", items, "action=", action, "rw=", rw)
         
 
-        if action != "Q":
-            continue
+#         if action != "Q":
+#             continue
 
 
-        j += 1
-        # if rw == "N" or action in IGNORE_CASES:
-        #     if "+" in message:
-        #         e1 += 1
-        #         l1.append(i)
-        #     continue
+#         j += 1
+#         # if rw == "N" or action in IGNORE_CASES:
+#         #     if "+" in message:
+#         #         e1 += 1
+#         #         l1.append(i)
+#         #     continue
 
-        if "+" not in message:
-            e2 += 1
-            l2.append(i)
-            continue
+#         if "+" not in message:
+#             e2 += 1
+#             l2.append(i)
+#             continue
 
-        # rwset.add(rw)
+#         # rwset.add(rw)
 
-        blocks = message.strip().split()
-        b_st = int(blocks[0])
-        nrb = int(blocks[2])
-        blkey = (b_st, nrb, rw)
-        # print(i, nrb, blocks)
-        ios = ios + int(nrb)
+#         blocks = message.strip().split()
+#         b_st = int(blocks[0])
+#         nrb = int(blocks[2])
+#         blkey = (b_st, nrb, rw)
+#         # print(i, nrb, blocks)
+#         ios = ios + int(nrb)
 
 
 log = "/home/bn/data/metadata.csv"
