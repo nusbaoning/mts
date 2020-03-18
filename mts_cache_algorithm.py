@@ -398,11 +398,12 @@ class LRU(CacheAlgorithm):
             node = node.next
 
     def change_size(self, size):
+        evictList = None
         if size > self.listSize:
             self.add_tail_node(size - self.listSize)
         elif size < self.listSize:
-            self.remove_tail_node(self.listSize - size)
-        return self.listSize
+            evictList = self.remove_tail_node(self.listSize - size)
+        return evictList
 
     # Increases the size of the cache by inserting n empty nodes at the tail
     # of the list.
@@ -421,14 +422,17 @@ class LRU(CacheAlgorithm):
     # list.
     def remove_tail_node(self, n):
         assert self.listSize >= n
+        l = []
         for i in range(n):
             node = self.head.prev
             if not node.empty:
                 del self.ssd[node.key]
+                l.append(node.key)
             # Splice the tail node out of the list
             self.head.prev = node.prev
             node.prev.next = self.head
         self.listSize -= n
+        return l
 
     def get_top_n(self, number):
         node = self.head
@@ -717,7 +721,7 @@ class LFU(CacheAlgorithm):
         cache_node.free_myself()
         if freq_node.count_caches() == 0:
             if self.freq_link_head == freq_node:
-                self.freq_link_head = target_freq_node
+                self.freq_link_head = freq_node.nxt
 
             freq_node.remove()
 
@@ -1232,11 +1236,17 @@ class ARC(CacheAlgorithm):
         return False
 
     def inner_change_size(self, p):
-        if int(self.p) != int(p):
-            self.lru.change_size(int(self.p))
-            self.glru.change_size(int(self.size-self.p))
-            self.lfu.change_size(int(self.size-self.p))
-            self.glfu.change_size(int(self.p))
+        
+        evictList = self.lru.change_size(int(self.p))
+        if evictList:
+            for i in evictList:
+                self.glru.update_cache(i)
+        self.glru.change_size(int(self.size-self.p))
+        evictList = self.lfu.change_size(int(self.size-self.p))
+        if evictList:
+            for i in evictList:
+                self.glfu.update_cache(i)
+        self.glfu.change_size(int(self.p))
 
     def update_cache(self, block):
         if self.lru.is_hit(block):
@@ -1251,7 +1261,7 @@ class ARC(CacheAlgorithm):
         elif self.glru.is_hit(block):
             # 更新p
             oldp = self.p
-            self.p = min(self.p+max(1, 1.0*len(self.glfu)/len(self.glru)) , self.size)
+            self.p = min(self.p+max(1, 1.0*len(self.glfu)/len(self.glru)) , self.size-1)
             
             # 将块从glru删掉，在lfu中更新
             self.glru.delete_cache(block)
@@ -1266,7 +1276,7 @@ class ARC(CacheAlgorithm):
         elif self.glfu.is_hit(block):
             # 更新p
             oldp = self.p
-            self.p = max(self.p-max(1, 1.0*len(self.glru)/len(self.glfu)) , 0)
+            self.p = max(self.p-max(1, 1.0*len(self.glru)/len(self.glfu)) , 1)
             
             # 将块从glfu删掉，在lfu中更新
             self.glfu.delete_cache(block)
@@ -1552,10 +1562,16 @@ def test_arc():
     17, 9, 6, 2, 4, 19, 8, 3, 15, 6, 
     12, 6, 12, 13, 5, 1, 19, 16, 5, 2, 
     12, 8, 14, 15, 10, 11, 11, 5, 4, 17, 
-    11, 9, 17, 15, 6, 14, 0, 18, 9, 15, 5, 6, 2, 2, 2, 4, 3, 6, 10, 19, 14, 7, 13, 16, 3, 6, 7, 8, 19, 12, 4, 12, 13, 18, 3, 15, 11, 10, 13, 11, 4, 7, 11, 19, 6, 11, 18, 11, 6, 1, 18, 14, 3, 7, 11, 5, 9, 14, 0, 18, 0, 2, 5, 18, 2, 6, 5, 11, 19, 16, 7, 0, 3, 4, 15, 4, 1, 1, 6, 14, 17, 17, 14, 2, 8, 6, 12, 18, 19, 3, 10, 6, 9, 11, 7, 8, 13, 19, 1, 13, 17, 17, 5, 6, 15, 4, 4, 18, 11, 12, 5, 11, 12, 7, 18, 0, 15, 9, 16, 1, 19, 10, 6, 1, 0, 14, 5, 17, 16, 16, 7, 2, 14, 11, 7, 12, 2, 5, 1, 5, 10, 8, 15, 0, 14, 2, 19, 6, 4, 19, 14, 18, 11, 15, 15, 0, 15, 7, 4, 19]
+    11, 9, 17, 15, 6, 14, 0, 18, 9, 15, 
+    5, 6, 2, 2, 2, 4, 3, 6, 10, 19, 
+    14, 7, 13, 16, 3, 6, 7, 8, 19, 12, 
+    4, 12, 13, 18, 3, 15, 11, 10, 13, 11, 
+    4, 7, 11, 19, 6, 11, 18, 11, 6, 1, 
+    18, 14, 3, 7, 11, 5, 9, 14, 0, 18, 
+    0, 2, 5, 18, 2, 6, 5, 11, 19, 16, 7, 0, 3, 4, 15, 4, 1, 1, 6, 14, 17, 17, 14, 2, 8, 6, 12, 18, 19, 3, 10, 6, 9, 11, 7, 8, 13, 19, 1, 13, 17, 17, 5, 6, 15, 4, 4, 18, 11, 12, 5, 11, 12, 7, 18, 0, 15, 9, 16, 1, 19, 10, 6, 1, 0, 14, 5, 17, 16, 16, 7, 2, 14, 11, 7, 12, 2, 5, 1, 5, 10, 8, 15, 0, 14, 2, 19, 6, 4, 19, 14, 18, 11, 15, 15, 0, 15, 7, 4, 19]
     ssd = ARC(12)
     for i in l:
-        print(ssd.hit, ssd.update)
+        print(ssd.hit, ssd.update, ssd.p)
         for j in ssd.glru.dli():
             if not j.empty:
                 print(j.key, end=',')
@@ -1579,7 +1595,7 @@ def test_arc():
         ssd.update_cache(i)
  
 
-test_arc()       
+# test_arc()       
 
 # cache = LFU(3)
 # cache.update_cache(1)
