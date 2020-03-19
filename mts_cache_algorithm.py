@@ -981,41 +981,54 @@ class MT(CacheAlgorithm):
         reqL = list(reqD.keys())
         reqL.sort(reverse=True)
         sumL.sort(key=operator.itemgetter(1), reverse=True)
-        print("test", len(sumL), len(potentialDict.ssd), updateNum)
+        # print("test", len(sumL), len(potentialDict.ssd), updateNum)
         _, goodSum = sumL[updateNum-1]
-        num = 0
-        updateNum = min(updateNum, len(sumL))
+        goodSum = max(goodSum, 3)
+        
         # if updateNum <= 1.2 * len(sumL):
         #     goodReq = 2
         # else:
-        goodReq = 1
+        goodReq = 2
         totalNum = len(potentialDict.ssd)
         for req in reversed(reqL):
             # print(req, len(reqD[req]), num, updateNum)
             if totalNum - len(reqD[req]) < updateNum:
-                goodReq = max(req, 1)
+                goodReq = max(req, 2)
                 break
             else:
                 totalNum -= len(reqD[req])   
-        print("test goodReq", goodReq, goodSum)
+        # print("test goodReq", goodReq, goodSum)
         # sys.exit(-1)
 
+        l = [[], [], [], []]
+        for blockID,_ in sumL:
+            rl = hisDict.get_history_data(blockID, period)
+            # no way to get l==None
+            gc = get_good_condition(rl, goodReq, goodSum)
+            l[gc].append(blockID)
+        i = 3
+        # print("test potentialDict", len(potentialDict.ssd))
+        if len(l[3])>0:
+            sign = True
+        num = 0
+        updateNum = min(updateNum, len(l[1])+len(l[2])+len(l[3]))
+
         # get evict items from ssd and do eviction
-        if self.size - len(self.ssd) < throt:
-            evictNum = min(throt, len(potentialDict.ssd)) - (self.size - len(self.ssd))
+        if self.size - len(self.ssd) < updateNum:
+            evictNum = updateNum - (self.size - len(self.ssd))
             # print("test evictNum=", evictNum)
             # calculate requests of ssd data and record to a dict based on request numbers
-            l = [[], [], [], []]
+            evictList = [[], [], [], []]
             for blockID in self.ssd.keys():
                 rl = hisDict.get_history_data(blockID, period)
                 if rl == None:
-                    l[0].append((blockID,0))
+                    evictList[0].append((blockID,0))
                 else:
                     s = sum(rl)
                     gc = get_good_condition(rl, goodReq, goodSum)
-                    l[gc].append((blockID,s))
+                    evictList[gc].append((blockID,s))
             
-            for item in l:
+            for item in evictList:
                 if evictNum <= 0:
                     break
                 if len(item) <= evictNum:
@@ -1029,20 +1042,13 @@ class MT(CacheAlgorithm):
                         self.delete_cache(blockID)
                     break
 
-            print("test ssd evict, size=", len(self.ssd), "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
-            if len(l[3])>0:
-                sign = True
+            # print("test ssd evict, size=", len(self.ssd), "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
+            
         # print("potential dict", potentialDict.ssd.keys())
         # calculate good conditions for potential data
-        l = [[], [], [], []]
-        for blockID,_ in sumL:
-            rl = hisDict.get_history_data(blockID, period)
-            # no way to get l==None
-            gc = get_good_condition(rl, goodReq, goodSum)
-            l[gc].append(blockID)
         i = 3
-        print("test potentialDict", len(potentialDict.ssd))
         updateList = []
+
         while i >= 0:
             # print(i, updateNum, len(l[i]))
             if updateNum <= 0:
@@ -1058,7 +1064,7 @@ class MT(CacheAlgorithm):
                     self.update_cache(l[i][j])
                     updateList.append(l[i][j])
                 break
-        print("test ssd update, size=", len(self.ssd), self.update, "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
+        # print("test ssd update, size=", len(self.ssd), self.update, "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
         if len(l[3])>0:
             sign = True
         return (sign, updateList)
@@ -1103,6 +1109,7 @@ class MTtime(CacheAlgorithm):
     # attention : only called in warm state
     # no check of size
     def update_cache(self, blockID):
+        assert self.size > len(self.ssd)
         if blockID not in self.ssd:            
             self.ssd[blockID] = 1
             super().update_cache()
@@ -1121,8 +1128,8 @@ class MTtime(CacheAlgorithm):
         
         # get evict items from ssd and do eviction
         evictNum = updateNum - (self.size - len(self.ssd))
-        print("test, throt=%d, updateNum=%d, evictNum=%d, size=%d, actual ssd size=%d" % (throt, updateNum, evictNum, self.size, len(self.ssd)))
-        print("goodReq=", self.goodReq, ", goodSum=", self.goodSum)
+        # print("test, throt=%d, updateNum=%d, evictNum=%d, size=%d, actual ssd size=%d" % (throt, updateNum, evictNum, self.size, len(self.ssd)))
+        # print("goodReq=", self.goodReq, ", goodSum=", self.goodSum)
         if evictNum > 0:
             # calculate requests of ssd data and record to a dict based on request numbers
             l = [[], [], [], []]
@@ -1157,7 +1164,7 @@ class MTtime(CacheAlgorithm):
                         self.delete_cache(blockID)
                     break
 
-            print("test ssd evict, size=", len(self.ssd), "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
+            # print("test ssd evict, size=", len(self.ssd), "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
 
 
         sumD = {}    
@@ -1198,7 +1205,7 @@ class MTtime(CacheAlgorithm):
                     blockID, _, _ = item[i]                    
                     self.update_cache(blockID)
                 break
-        print("test ssd update, size=", len(self.ssd), "分布情况=", len(l[3]), len(l[2]), len(l[1]), len(l[0]))
+        # print("test ssd update, size=", len(self.ssd), "分布情况=", len(l[3]), len(l[2]), len(l[1]), len(l[0]))
     
 
 # ARC的原理
@@ -1660,6 +1667,10 @@ def test_larc():
                 print(j.key, end=',')
         print()
     print(ssd.hit, ssd.update, ssd.cr)
+
+# def test_mt():
+#     cache = MT(5, )
+
 
 # test_larc()       
 

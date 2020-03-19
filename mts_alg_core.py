@@ -204,7 +204,7 @@ def load_file(traceID, typeID, alg, sizerate=0.1):
 	logFile.close()
 
 
-def load_file_mt(traceID, typeID, periodLen = 10**5, sizerate=0.16, throtrate=0.1, sleepInterval=30):
+def load_file_mt(traceID, typeID, periodLen = 10**5, sizerate=0.1, throtrate=0.1, sleepInterval=30):
 	readReq = 0
 	size = math.ceil(sizerate*uclnDict[traceID])
 	ssd = mts_cache_algorithm.MT(size)
@@ -474,7 +474,8 @@ print(sys.argv[1], sys.argv[2], "MT consumed ", end-start, "s")
 # end = time.clock()
 # print(sys.argv[1], sys.argv[2], "SS", "consumed ", end-start, "s")
 
-for l in ["hm_0",
+for l in [
+"hm_0",
 "mds_0",
 "prn_0",
 "proj_0",
@@ -486,6 +487,12 @@ for l in ["hm_0",
 "usr_20",
 "wdev_0",
 "web_2"]:
+# for l in ["hm_0", "mds_0"]:
+	start = time.clock()
+	load_file_mt(l, "cam")
+	end = time.clock()
+	print(l, "cam", "MT consumed ", end-start, "s")
+
 	# start = time.clock()
 	# load_file_period(l, "cam", mts_cache_algorithm.LRU)
 	# end = time.clock()
@@ -496,10 +503,10 @@ for l in ["hm_0",
 	# print(l, "cam", "PLFU", "consumed ", end-start, "s")
 
 
-	start = time.clock()
-	load_file(l, "cam", mts_cache_algorithm.LFU)
-	end = time.clock()
-	print(l, "cam", "LFU", "consumed ", end-start, "s")
+	# start = time.clock()
+	# load_file(l, "cam", mts_cache_algorithm.LARC)
+	# end = time.clock()
+	# print(l, "cam", "LARC2", "consumed ", end-start, "s")
 '''
 start = time.clock()
 load_file_period(sys.argv[1], sys.argv[2], mts_cache_algorithm.LRU)
