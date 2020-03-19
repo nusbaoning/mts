@@ -1200,13 +1200,23 @@ class MTtime(CacheAlgorithm):
                 break
         print("test ssd update, size=", len(self.ssd), "分布情况=", len(l[3]), len(l[2]), len(l[1]), len(l[0]))
     
-# 实现版本的bug
+
+# ARC的原理
+# 管理空间大小为2*SSD size
+# 分成四个队列LRU/LFU/ghost LRU/ghost LFU
+# 满足LRU+LFU=ghost LRU+LRU=ghost LFU+LFU=size
+# 第一次进入SSD的块进LRU
+# 在管理空间内hit(包括ghost LRU)进LFU
+# ghost LRU命中会导致LRU队列大小增加，ghost LFU命中同理
+ 
+
+# 实现版本与原设计方案的不同
 # 在原有的设计方案中，如果ghost LFU命中，p比LRU队列数量小，但是SSD实际不满的情况下
 # 是不会把LRU队列中元素踢出的，要等到SSD满了之后，才会踢出块
 # 但在运行中，SSD很快就会填满，ghost LFU命中会踢出一个SSD中的块，就无所谓了
 
-# 另外一个会有影响的bug是，ghost LFU命中的情况下，
-# 实际应该踢出一个LRU队列的块。但是修改顺序之后会有bug，就算了
+# ghost LFU命中，会引起LFU空间增加，正常来说SSD满的情况下应该踢出LRU的块
+# 但是为了实现简便，先执行了踢出操作，再调整队列大小，感觉影响不大
 
 class ARC(CacheAlgorithm):
     def __init__(self, size):
@@ -1295,8 +1305,41 @@ class ARC(CacheAlgorithm):
                 self.glru.update_cache(delkey)
             super().update_cache()
 
-    
+class LARC(CacheAlgorithm):
+    """docstring for LARC"""
+    def __init__(self, size):
+        super().__init__()
+        self.size = size
+        self.cr = 0.1*size
+        self.ssd = LRU(size)
+        self.shadow = LRU(int(self.cr))
 
+    def delete_cache(self, block):
+        self.ssd.delete_cache(block)
+        self.shadow.delete_cache(block)
+        
+    def update_cache(self, block):
+        if self.ssd.is_hit(block):
+            self.cr = max(0.1*self.size, self.cr-(1.0*self.size/(self.size-self.cr)))
+            self.ssd.update_cache(block)
+            # self.shadow.change_size(int(self.cr))
+        else:
+            self.cr = min(0.9*self.size, self.cr+1.0*self.size/self.cr)
+            if self.shadow.is_hit(block):
+                self.shadow.delete_cache(block)
+                self.ssd.update_cache(block)
+                super().update_cache()
+            else:
+                self.shadow.change_size(int(self.cr))
+                self.shadow.update_cache(block)
+            
+            
+
+    def is_hit(self, block):
+        if self.ssd.is_hit(block):
+            super().is_hit()
+            return True
+        return False
 
 class SieveStoreOriginal(CacheAlgorithm):
     """docstring for MT"""
@@ -1594,8 +1637,31 @@ def test_arc():
         print(hit)
         ssd.update_cache(i)
  
+def test_larc():
+    l = [0, 5, 15, 8, 14, 16, 3, 16, 4, 1, 8, 10, 1, 
+    3, 17, 1, 6, 4, 10, 9, 13, 11, 2, 8, 3, 2, 
+    10, 5, 3, 14, 3, 16, 12, 3, 6, 7, 17, 5, 15, 8, 18, 9, 9, 19, 10, 8, 0, 12, 16, 17, 12, 16, 1, 1, 5, 14, 10, 9, 15, 18, 12, 18, 0, 18, 4, 15, 14, 9, 18, 6, 11, 19, 5, 9, 10, 7, 6, 11, 5, 19, 14, 9, 2, 3, 19, 13, 11, 5, 3, 17, 14, 0, 6, 11, 3, 6, 10, 10, 18, 18, 8, 2, 8, 2, 5, 13, 13, 6, 2, 7, 17, 5, 7, 11, 9, 0, 9, 14, 14, 14, 19, 4, 12, 16, 11, 15, 10, 13, 7, 12, 17, 7, 2, 7, 19, 17, 9, 6, 18, 1, 15, 12, 12, 16, 4, 2, 0, 8, 3, 18, 16, 4, 12, 0, 17, 19, 9, 3, 2, 13, 17, 18, 10, 0, 13, 3, 0, 9, 12, 4, 10, 16, 16, 18, 17, 17, 18, 14, 6, 0, 7, 14, 11, 12, 1, 10, 13, 6, 5, 13, 0, 11, 6, 3, 11, 2, 3, 18, 17, 13]
+    # for i in range(200):
+    #     l.append(random.randint(0,19))
+    # print(l)
 
-# test_arc()       
+    ssd = LARC(10)
+    
+    for i in l:
+        print(ssd.hit, ssd.update, ssd.cr)
+        ssd.is_hit(i)
+        ssd.update_cache(i)
+        for j in ssd.ssd.dli():
+            if not j.empty:
+                print(j.key, end=',')
+        print(end=';')
+        for j in ssd.shadow.dli():
+            if not j.empty:
+                print(j.key, end=',')
+        print()
+    print(ssd.hit, ssd.update, ssd.cr)
+
+# test_larc()       
 
 # cache = LFU(3)
 # cache.update_cache(1)
