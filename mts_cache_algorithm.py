@@ -915,10 +915,12 @@ class PLFU(CacheAlgorithm):
         
 class MT(CacheAlgorithm):
     """docstring for MT"""
-    def __init__(self, size):
+    def __init__(self, size, goodReq, goodSum):
         super().__init__()
         self.size = size
         self.ssd = {}
+        self.minGoodReq = goodReq
+        self.minGoodSum = goodSum
 
     def __len__(self):
         return len(self.ssd)
@@ -983,17 +985,17 @@ class MT(CacheAlgorithm):
         sumL.sort(key=operator.itemgetter(1), reverse=True)
         # print("test", len(sumL), len(potentialDict.ssd), updateNum)
         _, goodSum = sumL[updateNum-1]
-        goodSum = max(goodSum, 3)
+        goodSum = max(goodSum, self.minGoodSum)
         
         # if updateNum <= 1.2 * len(sumL):
         #     goodReq = 2
         # else:
-        goodReq = 2
+        goodReq = self.minGoodReq
         totalNum = len(potentialDict.ssd)
         for req in reversed(reqL):
             # print(req, len(reqD[req]), num, updateNum)
             if totalNum - len(reqD[req]) < updateNum:
-                goodReq = max(req, 2)
+                goodReq = max(req, self.minGoodReq)
                 break
             else:
                 totalNum -= len(reqD[req])   
@@ -1324,7 +1326,11 @@ class LARC(CacheAlgorithm):
     def delete_cache(self, block):
         self.ssd.delete_cache(block)
         self.shadow.delete_cache(block)
-        
+      
+    def warm_up(self, block):
+        self.ssd.update_cache(block)
+        super().update_cache()
+
     def update_cache(self, block):
         if self.ssd.is_hit(block):
             self.cr = max(0.1*self.size, self.cr-(1.0*self.size/(self.size-self.cr)))
