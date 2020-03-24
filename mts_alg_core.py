@@ -114,7 +114,7 @@ def getPath(traceID, typeID):
 		return "/home/chai/go_filebench-1.4.8.fsl.0.8/workloads/" + traceID + "/test1_short.txt.req"
 
 PERIODNUM = 10
-PERIODLEN = 10 ** 3
+PERIODLEN = 10 ** 5
 logFilename = "/home/wcw/data/result.csv"
 # SIZERATE = 0.1
 

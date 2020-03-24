@@ -1274,6 +1274,7 @@ class ARC(CacheAlgorithm):
             if delkey!=None:
                 self.glfu.update_cache(delkey)
 
+
         elif self.lfu.is_hit(block):
             self.lfu.update_cache(block)
 
@@ -1288,6 +1289,7 @@ class ARC(CacheAlgorithm):
             if delkey!=None:
                 self.glfu.update_cache(delkey)
             super().update_cache()
+            return block
 
             # 更新各个队列大小
             self.inner_change_size(oldp)
@@ -1303,6 +1305,7 @@ class ARC(CacheAlgorithm):
             delkey = self.lfu.update_cache(block)
             if delkey!=None:
                 self.glfu.update_cache(delkey)
+            return block
             super().update_cache()
             self.inner_change_size(oldp) 
 
@@ -1313,6 +1316,8 @@ class ARC(CacheAlgorithm):
             if delkey!=None:
                 self.glru.update_cache(delkey)
             super().update_cache()
+            return block
+        return None
 
 class LARC(CacheAlgorithm):
     """docstring for LARC"""
@@ -1335,6 +1340,7 @@ class LARC(CacheAlgorithm):
         if self.ssd.is_hit(block):
             self.cr = max(0.1*self.size, self.cr-(1.0*self.size/(self.size-self.cr)))
             self.ssd.update_cache(block)
+            return block
             # self.shadow.change_size(int(self.cr))
         else:
             self.cr = min(0.9*self.size, self.cr+1.0*self.size/self.cr)
@@ -1342,11 +1348,12 @@ class LARC(CacheAlgorithm):
                 self.shadow.delete_cache(block)
                 self.ssd.update_cache(block)
                 super().update_cache()
+                return block
             else:
                 self.shadow.change_size(int(self.cr))
                 self.shadow.update_cache(block)
-            
-            
+        return None    
+        
 
     def is_hit(self, block):
         if self.ssd.is_hit(block):
