@@ -149,7 +149,7 @@ def load_file_period(traceID, typeID, alg, sizerate=0.1):
 	# print(traceID)
 
 	size = math.ceil(sizerate*uclnDict[traceID])
-	throt = int(0.1*size)
+	throt = int(0.1*min(size, PERIODLEN))
 	ssd = mts_cache_algorithm.Period(size, throt, alg, True, 50, 30)
 	fin = open(getPath(traceID, typeID), 'r', encoding='utf-8', errors='ignore')
 	lines = fin.readlines()
@@ -172,6 +172,39 @@ def load_file_period(traceID, typeID, alg, sizerate=0.1):
 	print("total hit rate", 1.0*ssd.ssd.hit/readReq)
 	logFile = open(logFilename, "a")
 	print(traceID, "period"+str(alg), size, 1.0*ssd.ssd.hit/readReq, ssd.ssd.update, sep=',', file=logFile)
+	logFile.close()
+
+def load_file_filter(traceID, typeID, alg, sizerate=0.1):
+	readReq = 0
+	# print(traceID)
+	size = math.ceil(sizerate*uclnDict[traceID])
+	ssd = alg(size)
+	fin = open(getPath(traceID, typeID), 'r', encoding='utf-8', errors='ignore')
+	lines = fin.readlines()
+	print("load file finished")
+	for line in lines:
+
+		items = line.split(' ')
+		reqtype = int(items[0])
+		block = int(items[2])
+		if reqtype == 1:			
+			ssd.delete_cache(block)
+		else:
+			readReq += 1
+			ssd.is_hit(block)	
+			if ssd.update < size:				
+				ssd.warm_up(block)
+				continue		
+			if readReq % 1000000 == 0:
+				print(readReq)
+						
+			ssd.update_cache(block)
+	fin.close()
+	print("size", size)
+	print("total hit rate", 1.0*ssd.hit/readReq)
+	print("write", ssd.update)
+	logFile = open(logFilename, "a")
+	print(traceID, alg, size, 1.0*ssd.hit/readReq, ssd.update, sep=',', file=logFile)
 	logFile.close()
 
 def load_file(traceID, typeID, alg, sizerate=0.1):
@@ -204,10 +237,10 @@ def load_file(traceID, typeID, alg, sizerate=0.1):
 	logFile.close()
 
 
-def load_file_mt(traceID, typeID, periodLen = 10**5, sizerate=0.16, throtrate=0.1, sleepInterval=30):
+def load_file_mt(traceID, typeID, periodLen = 10**5, sizerate=0.1, throtrate=0.1, sleepInterval=30, goodReq=2, goodSum=3):
 	readReq = 0
 	size = math.ceil(sizerate*uclnDict[traceID])
-	ssd = mts_cache_algorithm.MT(size)
+	ssd = mts_cache_algorithm.MT(size, goodReq, goodSum)
 	hisDict = mts_cache_algorithm.HistoryDict()
 	PERIODLEN = periodLen
 	throt = int(throtrate*min(size, PERIODLEN))
@@ -250,6 +283,13 @@ def load_file_mt(traceID, typeID, periodLen = 10**5, sizerate=0.16, throtrate=0.
 					sign |= sign1
 					hisDict = mts_cache_algorithm.HistoryDict()
 					potentialDict = mts_cache_algorithm.PLFU(PERIODLEN * PERIODNUM)
+				# new added 2020.3.20
+				else:
+					sign1,_ = ssd.update_cache_k(int(0.1*throt), potentialDict, hisDict, period)
+					sign |= sign1
+					hisDict = mts_cache_algorithm.HistoryDict()
+					potentialDict = mts_cache_algorithm.PLFU(PERIODLEN * PERIODNUM)
+
 				periodSign = 0	
 				period += 1
 				# sleepSign = (period-sleepStart) % sleepInterval
@@ -263,7 +303,7 @@ def load_file_mt(traceID, typeID, periodLen = 10**5, sizerate=0.16, throtrate=0.
 	print("total hit rate", 1.0*ssd.hit/readReq)
 	print("write", ssd.update)
 	logFile = open(logFilename, "a")
-	print(traceID, "MT", size, 1.0*ssd.hit/readReq, ssd.update, throt, PERIODLEN, sign, sep=',', file=logFile)
+	print(traceID, "MT2", size, 1.0*ssd.hit/readReq, ssd.update, throt, PERIODLEN, sign, goodReq, goodSum, sep=',', file=logFile)
 	logFile.close()
 
 def load_file_sieve_original(traceID, typeID, t1=9, t2=4, sizerate=0.4):
@@ -474,7 +514,8 @@ print(sys.argv[1], sys.argv[2], "MT consumed ", end-start, "s")
 # end = time.clock()
 # print(sys.argv[1], sys.argv[2], "SS", "consumed ", end-start, "s")
 
-for l in ["hm_0",
+for l in [
+"hm_0",
 "mds_0",
 "prn_0",
 "proj_0",
@@ -486,6 +527,22 @@ for l in ["hm_0",
 "usr_20",
 "wdev_0",
 "web_2"]:
+# for l in ["prn_0"]:
+	for j in [0.04, 0.06, 0.08, 0.1, 0.12, 0.14, 0.16]:
+		
+
+		start = time.clock()
+		load_file(l, "cam", mts_cache_algorithm.ARC, sizerate=j)
+		end = time.clock()
+		print(l, "cam", "MT consumed ", end-start, "s")
+
+		start = time.clock()
+		load_file_filter(l, "cam", mts_cache_algorithm.LARC, sizerate=j)
+		end = time.clock()
+		print(l, "cam", "MT consumed ", end-start, "s")
+
+		
+
 	# start = time.clock()
 	# load_file_period(l, "cam", mts_cache_algorithm.LRU)
 	# end = time.clock()
@@ -496,10 +553,10 @@ for l in ["hm_0",
 	# print(l, "cam", "PLFU", "consumed ", end-start, "s")
 
 
-	start = time.clock()
-	load_file(l, "cam", mts_cache_algorithm.LFU)
-	end = time.clock()
-	print(l, "cam", "LFU", "consumed ", end-start, "s")
+	# start = time.clock()
+	# load_file_filter(l, "cam", mts_cache_algorithm.LARC)
+	# end = time.clock()
+	# print(l, "cam", "LARC2", "consumed ", end-start, "s")
 '''
 start = time.clock()
 load_file_period(sys.argv[1], sys.argv[2], mts_cache_algorithm.LRU)

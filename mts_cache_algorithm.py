@@ -398,11 +398,12 @@ class LRU(CacheAlgorithm):
             node = node.next
 
     def change_size(self, size):
+        evictList = None
         if size > self.listSize:
             self.add_tail_node(size - self.listSize)
         elif size < self.listSize:
-            self.remove_tail_node(self.listSize - size)
-        return self.listSize
+            evictList = self.remove_tail_node(self.listSize - size)
+        return evictList
 
     # Increases the size of the cache by inserting n empty nodes at the tail
     # of the list.
@@ -421,14 +422,17 @@ class LRU(CacheAlgorithm):
     # list.
     def remove_tail_node(self, n):
         assert self.listSize >= n
+        l = []
         for i in range(n):
             node = self.head.prev
             if not node.empty:
                 del self.ssd[node.key]
+                l.append(node.key)
             # Splice the tail node out of the list
             self.head.prev = node.prev
             node.prev.next = self.head
         self.listSize -= n
+        return l
 
     def get_top_n(self, number):
         node = self.head
@@ -717,7 +721,7 @@ class LFU(CacheAlgorithm):
         cache_node.free_myself()
         if freq_node.count_caches() == 0:
             if self.freq_link_head == freq_node:
-                self.freq_link_head = target_freq_node
+                self.freq_link_head = freq_node.nxt
 
             freq_node.remove()
 
@@ -911,10 +915,12 @@ class PLFU(CacheAlgorithm):
         
 class MT(CacheAlgorithm):
     """docstring for MT"""
-    def __init__(self, size):
+    def __init__(self, size, goodReq, goodSum):
         super().__init__()
         self.size = size
         self.ssd = {}
+        self.minGoodReq = goodReq
+        self.minGoodSum = goodSum
 
     def __len__(self):
         return len(self.ssd)
@@ -977,41 +983,54 @@ class MT(CacheAlgorithm):
         reqL = list(reqD.keys())
         reqL.sort(reverse=True)
         sumL.sort(key=operator.itemgetter(1), reverse=True)
-        print("test", len(sumL), len(potentialDict.ssd), updateNum)
+        # print("test", len(sumL), len(potentialDict.ssd), updateNum)
         _, goodSum = sumL[updateNum-1]
-        num = 0
-        updateNum = min(updateNum, len(sumL))
+        goodSum = max(goodSum, self.minGoodSum)
+        
         # if updateNum <= 1.2 * len(sumL):
         #     goodReq = 2
         # else:
-        goodReq = 1
+        goodReq = self.minGoodReq
         totalNum = len(potentialDict.ssd)
         for req in reversed(reqL):
             # print(req, len(reqD[req]), num, updateNum)
             if totalNum - len(reqD[req]) < updateNum:
-                goodReq = max(req, 1)
+                goodReq = max(req, self.minGoodReq)
                 break
             else:
                 totalNum -= len(reqD[req])   
-        print("test goodReq", goodReq, goodSum)
+        # print("test goodReq", goodReq, goodSum)
         # sys.exit(-1)
 
+        l = [[], [], [], []]
+        for blockID,_ in sumL:
+            rl = hisDict.get_history_data(blockID, period)
+            # no way to get l==None
+            gc = get_good_condition(rl, goodReq, goodSum)
+            l[gc].append(blockID)
+        i = 3
+        # print("test potentialDict", len(potentialDict.ssd))
+        if len(l[3])>0:
+            sign = True
+        num = 0
+        updateNum = min(updateNum, len(l[1])+len(l[2])+len(l[3]))
+
         # get evict items from ssd and do eviction
-        if self.size - len(self.ssd) < throt:
-            evictNum = min(throt, len(potentialDict.ssd)) - (self.size - len(self.ssd))
+        if self.size - len(self.ssd) < updateNum:
+            evictNum = updateNum - (self.size - len(self.ssd))
             # print("test evictNum=", evictNum)
             # calculate requests of ssd data and record to a dict based on request numbers
-            l = [[], [], [], []]
+            evictList = [[], [], [], []]
             for blockID in self.ssd.keys():
                 rl = hisDict.get_history_data(blockID, period)
                 if rl == None:
-                    l[0].append((blockID,0))
+                    evictList[0].append((blockID,0))
                 else:
                     s = sum(rl)
                     gc = get_good_condition(rl, goodReq, goodSum)
-                    l[gc].append((blockID,s))
+                    evictList[gc].append((blockID,s))
             
-            for item in l:
+            for item in evictList:
                 if evictNum <= 0:
                     break
                 if len(item) <= evictNum:
@@ -1025,20 +1044,13 @@ class MT(CacheAlgorithm):
                         self.delete_cache(blockID)
                     break
 
-            print("test ssd evict, size=", len(self.ssd), "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
-            if len(l[3])>0:
-                sign = True
+            # print("test ssd evict, size=", len(self.ssd), "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
+            
         # print("potential dict", potentialDict.ssd.keys())
         # calculate good conditions for potential data
-        l = [[], [], [], []]
-        for blockID,_ in sumL:
-            rl = hisDict.get_history_data(blockID, period)
-            # no way to get l==None
-            gc = get_good_condition(rl, goodReq, goodSum)
-            l[gc].append(blockID)
         i = 3
-        print("test potentialDict", len(potentialDict.ssd))
         updateList = []
+
         while i >= 0:
             # print(i, updateNum, len(l[i]))
             if updateNum <= 0:
@@ -1054,7 +1066,7 @@ class MT(CacheAlgorithm):
                     self.update_cache(l[i][j])
                     updateList.append(l[i][j])
                 break
-        print("test ssd update, size=", len(self.ssd), self.update, "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
+        # print("test ssd update, size=", len(self.ssd), self.update, "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
         if len(l[3])>0:
             sign = True
         return (sign, updateList)
@@ -1099,6 +1111,7 @@ class MTtime(CacheAlgorithm):
     # attention : only called in warm state
     # no check of size
     def update_cache(self, blockID):
+        assert self.size > len(self.ssd)
         if blockID not in self.ssd:            
             self.ssd[blockID] = 1
             super().update_cache()
@@ -1117,8 +1130,8 @@ class MTtime(CacheAlgorithm):
         
         # get evict items from ssd and do eviction
         evictNum = updateNum - (self.size - len(self.ssd))
-        print("test, throt=%d, updateNum=%d, evictNum=%d, size=%d, actual ssd size=%d" % (throt, updateNum, evictNum, self.size, len(self.ssd)))
-        print("goodReq=", self.goodReq, ", goodSum=", self.goodSum)
+        # print("test, throt=%d, updateNum=%d, evictNum=%d, size=%d, actual ssd size=%d" % (throt, updateNum, evictNum, self.size, len(self.ssd)))
+        # print("goodReq=", self.goodReq, ", goodSum=", self.goodSum)
         if evictNum > 0:
             # calculate requests of ssd data and record to a dict based on request numbers
             l = [[], [], [], []]
@@ -1153,7 +1166,7 @@ class MTtime(CacheAlgorithm):
                         self.delete_cache(blockID)
                     break
 
-            print("test ssd evict, size=", len(self.ssd), "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
+            # print("test ssd evict, size=", len(self.ssd), "分布情况=", len(l[0]), len(l[1]), len(l[2]), len(l[3]))
 
 
         sumD = {}    
@@ -1194,15 +1207,25 @@ class MTtime(CacheAlgorithm):
                     blockID, _, _ = item[i]                    
                     self.update_cache(blockID)
                 break
-        print("test ssd update, size=", len(self.ssd), "分布情况=", len(l[3]), len(l[2]), len(l[1]), len(l[0]))
+        # print("test ssd update, size=", len(self.ssd), "分布情况=", len(l[3]), len(l[2]), len(l[1]), len(l[0]))
     
-# 实现版本的bug
+
+# ARC的原理
+# 管理空间大小为2*SSD size
+# 分成四个队列LRU/LFU/ghost LRU/ghost LFU
+# 满足LRU+LFU=ghost LRU+LRU=ghost LFU+LFU=size
+# 第一次进入SSD的块进LRU
+# 在管理空间内hit(包括ghost LRU)进LFU
+# ghost LRU命中会导致LRU队列大小增加，ghost LFU命中同理
+ 
+
+# 实现版本与原设计方案的不同
 # 在原有的设计方案中，如果ghost LFU命中，p比LRU队列数量小，但是SSD实际不满的情况下
 # 是不会把LRU队列中元素踢出的，要等到SSD满了之后，才会踢出块
 # 但在运行中，SSD很快就会填满，ghost LFU命中会踢出一个SSD中的块，就无所谓了
 
-# 另外一个会有影响的bug是，ghost LFU命中的情况下，
-# 实际应该踢出一个LRU队列的块。但是修改顺序之后会有bug，就算了
+# ghost LFU命中，会引起LFU空间增加，正常来说SSD满的情况下应该踢出LRU的块
+# 但是为了实现简便，先执行了踢出操作，再调整队列大小，感觉影响不大
 
 class ARC(CacheAlgorithm):
     def __init__(self, size):
@@ -1232,11 +1255,17 @@ class ARC(CacheAlgorithm):
         return False
 
     def inner_change_size(self, p):
-        if int(self.p) != int(p):
-            self.lru.change_size(int(self.p))
-            self.glru.change_size(int(self.size-self.p))
-            self.lfu.change_size(int(self.size-self.p))
-            self.glfu.change_size(int(self.p))
+        
+        evictList = self.lru.change_size(int(self.p))
+        if evictList:
+            for i in evictList:
+                self.glru.update_cache(i)
+        self.glru.change_size(int(self.size-self.p))
+        evictList = self.lfu.change_size(int(self.size-self.p))
+        if evictList:
+            for i in evictList:
+                self.glfu.update_cache(i)
+        self.glfu.change_size(int(self.p))
 
     def update_cache(self, block):
         if self.lru.is_hit(block):
@@ -1245,13 +1274,14 @@ class ARC(CacheAlgorithm):
             if delkey!=None:
                 self.glfu.update_cache(delkey)
 
+
         elif self.lfu.is_hit(block):
             self.lfu.update_cache(block)
 
         elif self.glru.is_hit(block):
             # 更新p
             oldp = self.p
-            self.p = min(self.p+max(1, 1.0*len(self.glfu)/len(self.glru)) , self.size)
+            self.p = min(self.p+max(1, 1.0*len(self.glfu)/len(self.glru)) , self.size-1)
             
             # 将块从glru删掉，在lfu中更新
             self.glru.delete_cache(block)
@@ -1259,6 +1289,7 @@ class ARC(CacheAlgorithm):
             if delkey!=None:
                 self.glfu.update_cache(delkey)
             super().update_cache()
+            return block
 
             # 更新各个队列大小
             self.inner_change_size(oldp)
@@ -1266,7 +1297,7 @@ class ARC(CacheAlgorithm):
         elif self.glfu.is_hit(block):
             # 更新p
             oldp = self.p
-            self.p = max(self.p-max(1, 1.0*len(self.glru)/len(self.glfu)) , 0)
+            self.p = max(self.p-max(1, 1.0*len(self.glru)/len(self.glfu)) , 1)
             
             # 将块从glfu删掉，在lfu中更新
             self.glfu.delete_cache(block)
@@ -1274,6 +1305,7 @@ class ARC(CacheAlgorithm):
             delkey = self.lfu.update_cache(block)
             if delkey!=None:
                 self.glfu.update_cache(delkey)
+            return block
             super().update_cache()
             self.inner_change_size(oldp) 
 
@@ -1284,9 +1316,50 @@ class ARC(CacheAlgorithm):
             if delkey!=None:
                 self.glru.update_cache(delkey)
             super().update_cache()
+            return block
+        return None
 
-    
+class LARC(CacheAlgorithm):
+    """docstring for LARC"""
+    def __init__(self, size):
+        super().__init__()
+        self.size = size
+        self.cr = 0.1*size
+        self.ssd = LRU(size)
+        self.shadow = LRU(int(self.cr))
 
+    def delete_cache(self, block):
+        self.ssd.delete_cache(block)
+        self.shadow.delete_cache(block)
+      
+    def warm_up(self, block):
+        self.ssd.update_cache(block)
+        super().update_cache()
+
+    def update_cache(self, block):
+        if self.ssd.is_hit(block):
+            self.cr = max(0.1*self.size, self.cr-(1.0*self.size/(self.size-self.cr)))
+            self.ssd.update_cache(block)
+            return block
+            # self.shadow.change_size(int(self.cr))
+        else:
+            self.cr = min(0.9*self.size, self.cr+1.0*self.size/self.cr)
+            if self.shadow.is_hit(block):
+                self.shadow.delete_cache(block)
+                self.ssd.update_cache(block)
+                super().update_cache()
+                return block
+            else:
+                self.shadow.change_size(int(self.cr))
+                self.shadow.update_cache(block)
+        return None    
+        
+
+    def is_hit(self, block):
+        if self.ssd.is_hit(block):
+            super().is_hit()
+            return True
+        return False
 
 class SieveStoreOriginal(CacheAlgorithm):
     """docstring for MT"""
@@ -1552,10 +1625,16 @@ def test_arc():
     17, 9, 6, 2, 4, 19, 8, 3, 15, 6, 
     12, 6, 12, 13, 5, 1, 19, 16, 5, 2, 
     12, 8, 14, 15, 10, 11, 11, 5, 4, 17, 
-    11, 9, 17, 15, 6, 14, 0, 18, 9, 15, 5, 6, 2, 2, 2, 4, 3, 6, 10, 19, 14, 7, 13, 16, 3, 6, 7, 8, 19, 12, 4, 12, 13, 18, 3, 15, 11, 10, 13, 11, 4, 7, 11, 19, 6, 11, 18, 11, 6, 1, 18, 14, 3, 7, 11, 5, 9, 14, 0, 18, 0, 2, 5, 18, 2, 6, 5, 11, 19, 16, 7, 0, 3, 4, 15, 4, 1, 1, 6, 14, 17, 17, 14, 2, 8, 6, 12, 18, 19, 3, 10, 6, 9, 11, 7, 8, 13, 19, 1, 13, 17, 17, 5, 6, 15, 4, 4, 18, 11, 12, 5, 11, 12, 7, 18, 0, 15, 9, 16, 1, 19, 10, 6, 1, 0, 14, 5, 17, 16, 16, 7, 2, 14, 11, 7, 12, 2, 5, 1, 5, 10, 8, 15, 0, 14, 2, 19, 6, 4, 19, 14, 18, 11, 15, 15, 0, 15, 7, 4, 19]
+    11, 9, 17, 15, 6, 14, 0, 18, 9, 15, 
+    5, 6, 2, 2, 2, 4, 3, 6, 10, 19, 
+    14, 7, 13, 16, 3, 6, 7, 8, 19, 12, 
+    4, 12, 13, 18, 3, 15, 11, 10, 13, 11, 
+    4, 7, 11, 19, 6, 11, 18, 11, 6, 1, 
+    18, 14, 3, 7, 11, 5, 9, 14, 0, 18, 
+    0, 2, 5, 18, 2, 6, 5, 11, 19, 16, 7, 0, 3, 4, 15, 4, 1, 1, 6, 14, 17, 17, 14, 2, 8, 6, 12, 18, 19, 3, 10, 6, 9, 11, 7, 8, 13, 19, 1, 13, 17, 17, 5, 6, 15, 4, 4, 18, 11, 12, 5, 11, 12, 7, 18, 0, 15, 9, 16, 1, 19, 10, 6, 1, 0, 14, 5, 17, 16, 16, 7, 2, 14, 11, 7, 12, 2, 5, 1, 5, 10, 8, 15, 0, 14, 2, 19, 6, 4, 19, 14, 18, 11, 15, 15, 0, 15, 7, 4, 19]
     ssd = ARC(12)
     for i in l:
-        print(ssd.hit, ssd.update)
+        print(ssd.hit, ssd.update, ssd.p)
         for j in ssd.glru.dli():
             if not j.empty:
                 print(j.key, end=',')
@@ -1578,8 +1657,35 @@ def test_arc():
         print(hit)
         ssd.update_cache(i)
  
+def test_larc():
+    l = [0, 5, 15, 8, 14, 16, 3, 16, 4, 1, 8, 10, 1, 
+    3, 17, 1, 6, 4, 10, 9, 13, 11, 2, 8, 3, 2, 
+    10, 5, 3, 14, 3, 16, 12, 3, 6, 7, 17, 5, 15, 8, 18, 9, 9, 19, 10, 8, 0, 12, 16, 17, 12, 16, 1, 1, 5, 14, 10, 9, 15, 18, 12, 18, 0, 18, 4, 15, 14, 9, 18, 6, 11, 19, 5, 9, 10, 7, 6, 11, 5, 19, 14, 9, 2, 3, 19, 13, 11, 5, 3, 17, 14, 0, 6, 11, 3, 6, 10, 10, 18, 18, 8, 2, 8, 2, 5, 13, 13, 6, 2, 7, 17, 5, 7, 11, 9, 0, 9, 14, 14, 14, 19, 4, 12, 16, 11, 15, 10, 13, 7, 12, 17, 7, 2, 7, 19, 17, 9, 6, 18, 1, 15, 12, 12, 16, 4, 2, 0, 8, 3, 18, 16, 4, 12, 0, 17, 19, 9, 3, 2, 13, 17, 18, 10, 0, 13, 3, 0, 9, 12, 4, 10, 16, 16, 18, 17, 17, 18, 14, 6, 0, 7, 14, 11, 12, 1, 10, 13, 6, 5, 13, 0, 11, 6, 3, 11, 2, 3, 18, 17, 13]
+    # for i in range(200):
+    #     l.append(random.randint(0,19))
+    # print(l)
 
-test_arc()       
+    ssd = LARC(10)
+    
+    for i in l:
+        print(ssd.hit, ssd.update, ssd.cr)
+        ssd.is_hit(i)
+        ssd.update_cache(i)
+        for j in ssd.ssd.dli():
+            if not j.empty:
+                print(j.key, end=',')
+        print(end=';')
+        for j in ssd.shadow.dli():
+            if not j.empty:
+                print(j.key, end=',')
+        print()
+    print(ssd.hit, ssd.update, ssd.cr)
+
+# def test_mt():
+#     cache = MT(5, )
+
+
+# test_larc()       
 
 # cache = LFU(3)
 # cache.update_cache(1)
